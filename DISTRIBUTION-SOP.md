@@ -1,42 +1,39 @@
-# RunTwin 個人自架版：安裝與使用 SOP
+# RunTwin self-hosted setup guide
 
-這份文件供「每位跑者在自己的 Windows 電腦上啟動一套 RunTwin，連接自己的 Strava 帳號」使用。Repository 不含任何人的帳號、活動、資料庫、token、API key 或訓練目標。
+**English** | [繁體中文](DISTRIBUTION-SOP.zh-TW.md)
 
-## 0. 先了解需求
+This guide is for a runner who wants to run their own RunTwin on a Windows PC, connected to their own Strava account. The repository contains nobody's accounts, activities, databases, tokens, API keys, or training goals. The commands below use PowerShell. On macOS or Linux, replace `.venv\Scripts\python.exe` with `.venv/bin/python`.
 
-> 隱私提醒：回填後，Strava 活動 description 會出現 RunTwin 分析區塊（標記由 `RUNTWIN_ANALYSIS_LABEL` 設定）。若不希望第三方看到，請在 Strava 將活動設為 Only Me，或不要執行回填命令。
+## 0. Requirements
 
-### 必要
+> Privacy note: after publishing, each Strava activity description contains a RunTwin analysis block. Its marker is set by `RUNTWIN_ANALYSIS_LABEL`. If you don't want others to see it, set those activities to Only Me in Strava, or don't run the publishing commands.
 
-- Windows 10／11
-- Python 3.11 或 3.12
-- Git（`git clone` 本 repository），或從 GitHub 下載 ZIP
-- Strava 帳號
-- 若要自動讀取 Strava：由你自己的 Strava 帳號建立 API Application
+### Required
 
-依 Strava 目前規則，建立 API Application 的帳號需要 Strava 訂閱。若不使用 Strava API，仍可用匿名 fixture 或自行準備的 snapshot 測試。
+- Windows 10/11 (macOS/Linux also work)
+- Python 3.11 or 3.12
+- Git (`git clone` this repository), or download the ZIP from GitHub
+- A Strava account
+- For automatic Strava sync: a Strava API application created under your own account
 
-### 選配
+Under Strava's current rules, the account that creates an API application needs a Strava subscription. Without the Strava API, you can still try RunTwin with the anonymous fixture or your own snapshot.
 
-- Anthropic 或 OpenAI API key：用 LLM 產生較完整的單次活動分析；沒有也能使用規則式 fallback。
-- Docker Desktop：若想使用 PostgreSQL 與容器常駐服務。第一次使用建議先依本文的「Windows 本機模式」。
-- 公開 HTTPS 網域／Tunnel：只有即時 Webhook 需要；不設定也能由 worker 每小時補抓。
+### Optional
 
-## 1. 取得原始碼
+- An Anthropic or OpenAI API key, for richer LLM-written analysis. Without one, the rule-based fallback is used.
+- Docker Desktop, for PostgreSQL and always-on services. For a first try, the local mode below is simpler.
+- A public HTTPS domain or tunnel, which is only needed for real-time webhooks. Without it, the worker still picks up new runs every hour.
 
-```powershell
-git clone https://github.com/<你的帳號>/runtwin.git C:\RunTwin
-```
-
-或下載 ZIP，解壓到不含特殊權限限制的路徑，例如 `C:\RunTwin`。
-
-以下 PowerShell 指令都在該目錄執行：
+## 1. Get the source
 
 ```powershell
+git clone https://github.com/<your-account>/runtwin.git C:\RunTwin
 Set-Location C:\RunTwin
 ```
 
-## 2. 建立 Python 環境
+Or download the ZIP and extract it somewhere without special permission restrictions, such as `C:\RunTwin`.
+
+## 2. Create a Python environment
 
 ```powershell
 py -3.12 -m venv .venv
@@ -44,105 +41,98 @@ py -3.12 -m venv .venv
 .venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
-若沒有 Python 3.12，可使用 Python 3.11：
+If you don't have Python 3.12, use `py -3.11 -m venv .venv`.
 
-```powershell
-py -3.11 -m venv .venv
-```
-
-## 3. 建立自己的 `.env`
+## 3. Create your own `.env`
 
 ```powershell
 Copy-Item .env.example .env
 ```
 
-產生 Django secret：
+Generate a Django secret:
 
 ```powershell
 .venv\Scripts\python.exe -c "import secrets; print(secrets.token_urlsafe(64))"
 ```
 
-編輯 `.env`，本機模式至少設定：
+For local mode, set at least:
 
 ```dotenv
-DJANGO_SECRET_KEY=貼上剛才產生的值
+DJANGO_SECRET_KEY=paste-the-generated-value
 DJANGO_DEBUG=0
 DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1
 DJANGO_CSRF_TRUSTED_ORIGINS=http://localhost:8000,http://127.0.0.1:8000
 DATABASE_URL=
 RUNTWIN_PROVIDER=strava_api
 RUNTWIN_EXPORT_DIR=runtime/exports
+STRAVA_TOKEN_FILE=runtime/strava-token.json
 
 RUNTWIN_ADMIN_USERNAME=runner
-RUNTWIN_ADMIN_PASSWORD=請改成自己的長隨機密碼
+RUNTWIN_ADMIN_PASSWORD=change-to-your-own-long-random-password
 RUNTWIN_ADMIN_EMAIL=
 ```
 
-`.env` 含密碼和 token，不能上傳、傳給別人或提交至版本控制。
+`.env` holds passwords and tokens. Never upload it, share it, or commit it. It is already in `.gitignore`.
 
-## 4. 建立自己的 Strava API Application
+## 4. Create your own Strava API application
 
-1. 登入 Strava。
-2. 開啟 <https://www.strava.com/settings/api>。
-3. 建立 Application。
-4. Website 可先填本機用途的說明網址。
-5. Authorization Callback Domain 在本機測試可填 `localhost`。
-6. 保存自己的 Client ID 與 Client Secret。
-7. OAuth 授權需包含：
-   - `activity:read_all`：讀取包含 Only Me 在內的活動。
-   - `activity:write`：回填 `[Easy]`、`[Long]` 等標題與分析區塊。
+1. Sign in to Strava and open <https://www.strava.com/settings/api>.
+2. Create an application. The website can be any description URL for local use.
+3. Set **Authorization Callback Domain** to `localhost`.
+4. Note your Client ID and Client Secret.
+5. The OAuth scopes must include:
+   - `activity:read_all`, to read activities including Only Me ones.
+   - `activity:write`, to publish `[Easy]`/`[Long]` title tags and the analysis block.
 
-確認 `.env` 已由範本建立，然後執行內附的本機 OAuth 輔助工具：
+Then run the bundled OAuth helper:
 
 ```powershell
 .venv\Scripts\python.exe scripts\configure_strava_oauth.py
 ```
 
-依提示輸入自己的 Client ID 與 Client Secret。工具會：
+Enter your Client ID and Client Secret when prompted. The helper:
 
-1. 開啟 Strava 授權頁。
-2. 在 `http://localhost:8765/callback` 接收一次性 authorization code。
-3. 向 Strava 交換 token。
-4. 將自己的 Client ID、Client Secret、refresh token 與 athlete ID 寫入 `.env`。
+1. opens the Strava authorization page,
+2. receives the one-time code at `http://localhost:8765/callback`,
+3. exchanges it for tokens,
+4. writes your client ID, client secret, refresh token, and athlete ID into `.env`.
 
-因此 Strava App 的 Authorization Callback Domain 請填 `localhost`。`.env` 更新後會包含：
+Afterwards `.env` contains:
 
 ```dotenv
-STRAVA_CLIENT_ID=你的Client ID
-STRAVA_CLIENT_SECRET=你的Client Secret
-STRAVA_REFRESH_TOKEN=你的Refresh Token
-STRAVA_ATHLETE_ID=你的數字Athlete ID
-STRAVA_TOKEN_FILE=runtime/strava-token.json
-STRAVA_API_BASE_URL=https://www.strava.com/api/v3
+STRAVA_CLIENT_ID=your-client-id
+STRAVA_CLIENT_SECRET=your-client-secret
+STRAVA_REFRESH_TOKEN=your-refresh-token
+STRAVA_ATHLETE_ID=your-numeric-athlete-id
 ```
 
-若防火牆阻擋本機 callback，可改依 Strava 官方 OAuth 文件手動取得 refresh token：<https://developers.strava.com/docs/authentication/>。
+If a firewall blocks the local callback, get a refresh token manually by following Strava's OAuth docs: <https://developers.strava.com/docs/authentication/>.
 
-## 5. 設定 AI 分析（選配）
+## 5. Configure AI analysis (optional)
 
-二選一，使用你自己申請的 API key。
+Pick one provider and use your own API key.
 
-Anthropic（Claude），key 從 <https://console.anthropic.com/> 取得：
+Anthropic (Claude), with a key from <https://console.anthropic.com/>:
 
 ```dotenv
 RUNTWIN_AI_PROVIDER=anthropic
-ANTHROPIC_API_KEY=sk-ant-你的金鑰
+ANTHROPIC_API_KEY=sk-ant-your-key
 RUNTWIN_AI_MODEL=
 ```
 
-OpenAI，key 從 <https://platform.openai.com/api-keys> 取得：
+OpenAI, with a key from <https://platform.openai.com/api-keys>:
 
 ```dotenv
 RUNTWIN_AI_PROVIDER=openai
-OPENAI_API_KEY=sk-你的金鑰
+OPENAI_API_KEY=sk-your-key
 RUNTWIN_AI_MODEL=
 ```
 
-`RUNTWIN_AI_MODEL` 留空時使用預設模型（Anthropic `claude-opus-5-5`，OpenAI `gpt-6.2-astra`）。想降低費用可改成 `claude-sonnet-5-5` 或 `gpt-6.2-sol`。
+With `RUNTWIN_AI_MODEL` empty, the default model is used: `claude-opus-5-5` for Anthropic, `gpt-6.2-astra` for OpenAI. To reduce cost, use `claude-sonnet-5-5` or `gpt-6.2-sol`.
 
-不使用 AI 時把 `RUNTWIN_AI_PROVIDER` 留空，系統會使用 deterministic fallback。
+To run without AI, leave `RUNTWIN_AI_PROVIDER` empty and the deterministic fallback is used.
 
-## 6. 初始化資料庫與帳號
+## 6. Initialize the database and login
 
 ```powershell
 .venv\Scripts\python.exe manage.py migrate
@@ -150,189 +140,162 @@ RUNTWIN_AI_MODEL=
 .venv\Scripts\python.exe manage.py create_local_user
 ```
 
-`seed_athlete_profile` 只建立不含個人資訊的空白 profile。
+`seed_athlete_profile` only creates an empty profile with no personal data.
 
-啟動後登入 Django Admin：
+After starting the web app (step 8), sign in to Django admin at <http://127.0.0.1:8000/admin/>. Open **Athlete profiles** and fill in your own values:
 
-<http://127.0.0.1:8000/admin/>
+- time zone
+- half-marathon PB and goal
+- marathon goal
+- usual weekly distance
+- runs per week
+- weekday single-run distance limit
+- long-run days
+- provisional tempo HR range
+- observed max HR
 
-進入 **Athlete profiles**，填入自己的：
+Don't copy someone else's numbers. You can leave unknown fields empty. If you don't know your usual weekly distance or weekday limit, enter `0`.
 
-- 時區
-- 半馬 PB／目標
-- 全馬目標
-- 一般週跑量
-- 每週跑步次數
-- 平日單次距離上限
-- 長跑日
-- 暫定節奏心率
-- 已觀察最高心率
+## 7. First sync and test
 
-不要直接沿用別人的數值。資料不足的欄位可先留空；一般週跑量與平日距離上限若未知可先填 `0`。
-
-## 7. 首次同步與測試
-
-同步自己的 Strava 活動：
+Sync your Strava activities:
 
 ```powershell
 .venv\Scripts\python.exe manage.py sync_strava_activities
 ```
 
-立即掃描最近 14 天、分析尚未發布的跑步並回填 Strava：
+Scan the last 14 days, analyze unpublished runs, and publish them to Strava:
 
 ```powershell
 .venv\Scripts\python.exe manage.py reconcile_strava_activities --days 14 --limit 100
 ```
 
-注意：`reconcile_strava_activities` 會修改 Strava 活動的標題與 description。可先用指定 activity ID 預覽既有本機分析：
+Note that `reconcile_strava_activities` **modifies** Strava titles and descriptions. To preview an existing local analysis for one activity first:
 
 ```powershell
 .venv\Scripts\python.exe manage.py publish_activity_analysis <activity-id> --dry-run
 ```
 
-## 8. 啟動三個常駐程序
+## 8. Start the three services
 
-開三個 PowerShell 視窗，全部進入 `C:\RunTwin`。
+Open three PowerShell windows in `C:\RunTwin`.
 
-### 視窗 A：Web
+**Window A, web app:**
 
 ```powershell
 .venv\Scripts\python.exe manage.py runserver 127.0.0.1:8000 --noreload
 ```
 
-開啟：
+Then open <http://127.0.0.1:8000/weekly>.
 
-<http://127.0.0.1:8000/weekly>
-
-### 視窗 B：新活動 Worker
+**Window B, new-activity worker:**
 
 ```powershell
 .venv\Scripts\python.exe manage.py process_strava_webhooks
 ```
 
-即使沒有公開 Webhook，worker 預設仍會每小時掃描最近 14 天（`STRAVA_RECONCILE_DAYS`），補抓新活動。停機超過這個天數時，請手動執行 `reconcile_strava_activities --days N`。
+Even without a public webhook, the worker re-scans the last 14 days (`STRAVA_RECONCILE_DAYS`) every hour to pick up new runs. If your PC was off for longer than that, run `reconcile_strava_activities --days N` manually.
 
-### 視窗 C：每日週報 Scheduler
+**Window C, daily weekly-report scheduler:**
 
 ```powershell
 .venv\Scripts\python.exe manage.py run_weekly_scheduler
 ```
 
-它會每日 09:00（Asia/Taipei）更新當週週報，週一同時結算上一週。
+This refreshes the current week's report at 09:00 Asia/Taipei every day, and finalizes the previous week on Mondays.
 
-關閉任一視窗就會停止相應服務。若需要開機自動啟動，建議改用 Docker Compose 或自行建立 Windows Scheduled Task／service。
+Closing a window stops that service. To start everything on boot, use Docker Compose (step 10) or a Windows Scheduled Task or service.
 
-## 9. Webhook 即時模式（進階、選配）
+## 9. Real-time webhook mode (advanced, optional)
 
-沒有 Webhook 時最慢約等待一個 reconciliation interval。若希望上傳 Strava 後立即處理，需要：
+Without a webhook, new runs appear within one reconcile interval (one hour by default). For near-instant processing you need:
 
-1. 一個固定的公開 HTTPS URL。
-2. 兩組獨立的隨機 token：
+1. A stable public HTTPS URL.
+2. Two independent random tokens:
 
-```powershell
-.venv\Scripts\python.exe -c "import secrets; print(secrets.token_urlsafe(48))"
-```
+   ```powershell
+   .venv\Scripts\python.exe -c "import secrets; print(secrets.token_urlsafe(48))"
+   ```
 
-3. 在 `.env` 設定：
+3. These values in `.env`:
 
-```dotenv
-STRAVA_WEBHOOK_PATH_TOKEN=第一組隨機值
-STRAVA_WEBHOOK_VERIFY_TOKEN=第二組隨機值
-STRAVA_WEBHOOK_CALLBACK_URL=https://你的網域/webhooks/strava/第一組隨機值
-STRAVA_WEBHOOK_SUBSCRIPTION_ID=
-```
+   ```dotenv
+   STRAVA_WEBHOOK_PATH_TOKEN=first-random-value
+   STRAVA_WEBHOOK_VERIFY_TOKEN=second-random-value
+   STRAVA_WEBHOOK_CALLBACK_URL=https://your-domain/webhooks/strava/first-random-value
+   STRAVA_WEBHOOK_SUBSCRIPTION_ID=
+   ```
 
-4. 確認公開 health endpoint 可連線。
-5. 建立 subscription：
+   Add the public hostname to `DJANGO_ALLOWED_HOSTS`.
 
-```powershell
-.venv\Scripts\python.exe manage.py manage_strava_webhook create
-```
+4. Confirm the public `/healthz` endpoint is reachable.
+5. Create the subscription:
 
-6. 將回傳的 ID 填入：
+   ```powershell
+   .venv\Scripts\python.exe manage.py manage_strava_webhook create
+   ```
 
-```dotenv
-STRAVA_WEBHOOK_SUBSCRIPTION_ID=回傳的數字
-```
+6. Put the returned ID in `STRAVA_WEBHOOK_SUBSCRIPTION_ID=`.
+7. Restart the web app and the worker.
 
-7. 重新啟動 Web 與 worker。
+## 10. Docker mode (optional)
 
-## 10. Docker 模式（選配）
+1. Install and start Docker Desktop.
+2. In `.env`, use the container paths:
 
-1. 安裝並啟動 Docker Desktop。
-2. `.env` 裡的路徑使用容器預設值，例如：
+   ```dotenv
+   DATABASE_URL=postgresql://runtwin:your-db-password@db:5432/runtwin
+   RUNTWIN_EXPORT_DIR=/app/runtime/exports
+   STRAVA_TOKEN_FILE=/app/runtime/strava-token.json
+   POSTGRES_PASSWORD=your-db-password
+   DJANGO_SECRET_KEY=long-random-string
+   ```
 
-```dotenv
-DATABASE_URL=postgresql://runtwin:你的資料庫密碼@db:5432/runtwin
-RUNTWIN_EXPORT_DIR=/app/runtime/exports
-STRAVA_TOKEN_FILE=/app/runtime/strava-token.json
-POSTGRES_PASSWORD=你的資料庫密碼
-DJANGO_SECRET_KEY=長隨機字串
-```
+   Compose refuses to start if `POSTGRES_PASSWORD` or `DJANGO_SECRET_KEY` is missing.
 
-Compose 在 `POSTGRES_PASSWORD` 或 `DJANGO_SECRET_KEY` 未設定時會拒絕啟動。
+3. Start:
 
-3. 啟動：
+   ```powershell
+   docker compose up --build -d
+   docker compose ps
+   ```
 
-```powershell
-docker compose up --build -d
-docker compose ps
-```
+4. Create a login:
 
-4. 建立登入帳號：
+   ```powershell
+   docker compose exec web python manage.py create_local_user
+   ```
 
-```powershell
-docker compose exec web python manage.py create_local_user
-```
+Compose runs PostgreSQL, the web app, the worker, and the daily scheduler. A public webhook still needs an HTTPS reverse proxy or tunnel.
 
-Compose 會啟動 PostgreSQL、Web、worker 與每日 scheduler。公開 Webhook 仍需額外的 HTTPS reverse proxy 或 tunnel。
-
-## 11. 驗證與故障排除
-
-Django 設定：
+## 11. Verify and troubleshoot
 
 ```powershell
 .venv\Scripts\python.exe manage.py check
+Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8000/healthz   # expect {"status":"ok"}
+.venv\Scripts\python.exe -m pytest                                   # never calls Strava, Garmin, or any LLM
 ```
 
-Web 健康狀態：
+Common issues:
 
-```powershell
-Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8000/healthz
-```
+- **LLM `401`**: `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` is wrong, or doesn't match `RUNTWIN_AI_PROVIDER`. Runs fall back to the deterministic analysis.
+- **Strava `401`**: the refresh token or client ID/secret is wrong, or the token was revoked.
+- **Nothing gets published**: the OAuth grant is missing `activity:write`.
+- **Only Me activities are missing**: the OAuth grant is missing `activity:read_all`.
+- **A new activity doesn't show up**: make sure the worker is running, or run reconciliation manually.
+- **`.env` changes have no effect**: restart the web app, the worker, and the scheduler.
+- **SQLite `database is locked`**: don't start multiple workers or servers. For long-term use, switch to Docker PostgreSQL.
 
-預期：
+## 12. Security checklist
 
-```json
-{"status":"ok"}
-```
-
-執行測試（不會連線到 Strava、Garmin 或任何 LLM）：
-
-```powershell
-.venv\Scripts\python.exe -m pytest
-```
-
-常見問題：
-
-- LLM `401`：`ANTHROPIC_API_KEY`／`OPENAI_API_KEY` 錯誤或與 `RUNTWIN_AI_PROVIDER` 不符；活動會降級為 fallback。
-- Strava `401`：refresh token、client ID／secret 不正確，或 token 已撤銷。
-- 無法回填：OAuth 缺少 `activity:write`。
-- Only Me 活動抓不到：OAuth 缺少 `activity:read_all`。
-- 新活動沒有立刻出現：確認 worker 持續運作，或手動執行 reconciliation。
-- `.env` 修改後未生效：重新啟動 Web、worker 與 scheduler。
-- SQLite `database is locked`：避免重複啟動多份 worker／server；長期部署改用 Docker PostgreSQL。
-
-## 12. 安全檢查
-
-分享、備份或回報問題前，絕對不要附上：
+Before sharing, backing up, or reporting an issue, never attach:
 
 - `.env`
 - `db.sqlite3`
 - `runtime/strava-token.json`
-- `runtime/` logs／exports
+- `runtime/` logs and exports
 - `snapshots/`
-- 畫面截圖中的個人資料
-- Client secret、refresh token、Anthropic／OpenAI key
+- screenshots showing personal data
+- your client secret, refresh token, or Anthropic/OpenAI key
 
-更完整的部署與多人架構說明請閱讀 [`docs/sharing-and-deployment.md`](docs/sharing-and-deployment.md)。
+For deployment models and multi-user considerations, see [`docs/sharing-and-deployment.md`](docs/sharing-and-deployment.md) (Chinese).
