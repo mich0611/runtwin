@@ -7,7 +7,7 @@ Self-hosted running analytics for Strava. RunTwin syncs your runs through your o
 **Quick start (no Strava account needed):**
 
 ```bash
-python -m venv .venv && . .venv/bin/activate   # Windows: .venv\Scriptsctivate
+python -m venv .venv && . .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 python manage.py migrate && python manage.py seed_athlete_profile
 python manage.py import_mcp_snapshot fixtures/anonymous_mcp_snapshot.json
