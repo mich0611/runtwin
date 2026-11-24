@@ -1,0 +1,134 @@
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: runtwin
+      POSTGRES_USER: runtwin
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U runtwin -d runtwin"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+  web:
+    build: .
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://runtwin:${POSTGRES_PASSWORD}@db:5432/runtwin
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?Set DJANGO_SECRET_KEY in .env}
+      DJANGO_DEBUG: ${DJANGO_DEBUG:-0}
+      DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1}
+      DJANGO_CSRF_TRUSTED_ORIGINS: ${DJANGO_CSRF_TRUSTED_ORIGINS:-}
+      DJANGO_SECURE_COOKIES: ${DJANGO_SECURE_COOKIES:-0}
+      DJANGO_SECURE_SSL_REDIRECT: ${DJANGO_SECURE_SSL_REDIRECT:-0}
+      DJANGO_SECURE_HSTS_SECONDS: ${DJANGO_SECURE_HSTS_SECONDS:-0}
+      DJANGO_BEHIND_HTTPS_PROXY: ${DJANGO_BEHIND_HTTPS_PROXY:-0}
+      RUNTWIN_PROVIDER: ${RUNTWIN_PROVIDER:-snapshot}
+      RUNTWIN_EXPORT_DIR: /app/runtime/exports
+      RUNTWIN_AI_PROVIDER: ${RUNTWIN_AI_PROVIDER:-}
+      RUNTWIN_AI_MODEL: ${RUNTWIN_AI_MODEL:-}
+      RUNTWIN_AI_EFFORT: ${RUNTWIN_AI_EFFORT:-medium}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      RUNTWIN_ANALYSIS_LABEL: ${RUNTWIN_ANALYSIS_LABEL:-RunTwin analysis}
+      RUNTWIN_LEGACY_ANALYSIS_LABELS: ${RUNTWIN_LEGACY_ANALYSIS_LABELS:-}
+      STRAVA_CLIENT_ID: ${STRAVA_CLIENT_ID:-}
+      STRAVA_CLIENT_SECRET: ${STRAVA_CLIENT_SECRET:-}
+      STRAVA_REFRESH_TOKEN: ${STRAVA_REFRESH_TOKEN:-}
+      STRAVA_TOKEN_FILE: /app/runtime/strava-token.json
+      STRAVA_API_BASE_URL: ${STRAVA_API_BASE_URL:-https://www.strava.com/api/v3}
+      STRAVA_WEBHOOK_PATH_TOKEN: ${STRAVA_WEBHOOK_PATH_TOKEN:-not-configured}
+      STRAVA_WEBHOOK_VERIFY_TOKEN: ${STRAVA_WEBHOOK_VERIFY_TOKEN:-}
+      STRAVA_WEBHOOK_SIGNING_SECRET: ${STRAVA_WEBHOOK_SIGNING_SECRET:-}
+      STRAVA_WEBHOOK_REQUIRE_SIGNATURE: ${STRAVA_WEBHOOK_REQUIRE_SIGNATURE:-0}
+      STRAVA_WEBHOOK_CALLBACK_URL: ${STRAVA_WEBHOOK_CALLBACK_URL:-}
+      STRAVA_WEBHOOK_SUBSCRIPTION_ID: ${STRAVA_WEBHOOK_SUBSCRIPTION_ID:-}
+      STRAVA_ATHLETE_ID: ${STRAVA_ATHLETE_ID:-}
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 8000), timeout=5).close()"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - runtime_data:/app/runtime
+      - ./snapshots:/app/snapshots:ro
+    depends_on:
+      db:
+        condition: service_healthy
+  webhook-worker:
+    build: .
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://runtwin:${POSTGRES_PASSWORD}@db:5432/runtwin
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?Set DJANGO_SECRET_KEY in .env}
+      RUNTWIN_AI_PROVIDER: ${RUNTWIN_AI_PROVIDER:-}
+      RUNTWIN_AI_MODEL: ${RUNTWIN_AI_MODEL:-}
+      RUNTWIN_AI_EFFORT: ${RUNTWIN_AI_EFFORT:-medium}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      RUNTWIN_ANALYSIS_LABEL: ${RUNTWIN_ANALYSIS_LABEL:-RunTwin analysis}
+      RUNTWIN_LEGACY_ANALYSIS_LABELS: ${RUNTWIN_LEGACY_ANALYSIS_LABELS:-}
+      RUNTWIN_GARMIN_ENABLED: ${RUNTWIN_GARMIN_ENABLED:-0}
+      RUNTWIN_GARMIN_TOKEN_DIR: /app/garmin-tokens
+      STRAVA_CLIENT_ID: ${STRAVA_CLIENT_ID:-}
+      STRAVA_CLIENT_SECRET: ${STRAVA_CLIENT_SECRET:-}
+      STRAVA_REFRESH_TOKEN: ${STRAVA_REFRESH_TOKEN:-}
+      STRAVA_TOKEN_FILE: /app/runtime/strava-token.json
+      STRAVA_API_BASE_URL: ${STRAVA_API_BASE_URL:-https://www.strava.com/api/v3}
+      STRAVA_WEBHOOK_SUBSCRIPTION_ID: ${STRAVA_WEBHOOK_SUBSCRIPTION_ID:-}
+      STRAVA_ATHLETE_ID: ${STRAVA_ATHLETE_ID:-}
+      STRAVA_WEBHOOK_POLL_SECONDS: ${STRAVA_WEBHOOK_POLL_SECONDS:-10}
+      STRAVA_WEBHOOK_MAX_ATTEMPTS: ${STRAVA_WEBHOOK_MAX_ATTEMPTS:-3}
+      STRAVA_WEBHOOK_PROCESSING_TIMEOUT_SECONDS: ${STRAVA_WEBHOOK_PROCESSING_TIMEOUT_SECONDS:-1800}
+      STRAVA_RECONCILE_INTERVAL_SECONDS: ${STRAVA_RECONCILE_INTERVAL_SECONDS:-3600}
+      STRAVA_RECONCILE_DAYS: ${STRAVA_RECONCILE_DAYS:-14}
+    command: ["python", "manage.py", "process_strava_webhooks"]
+    volumes:
+      - runtime_data:/app/runtime
+      # Tokens from garmin-mcp-auth on the host. Writable so refreshed tokens persist for the host too.
+      - ${RUNTWIN_GARMIN_HOST_TOKEN_DIR:-~/.garminconnect}:/app/garmin-tokens
+    depends_on:
+      web:
+        condition: service_healthy
+  scheduler:
+    build: .
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://runtwin:${POSTGRES_PASSWORD}@db:5432/runtwin
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?Set DJANGO_SECRET_KEY in .env}
+      DJANGO_DEBUG: ${DJANGO_DEBUG:-0}
+      DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1}
+      RUNTWIN_PROVIDER: ${RUNTWIN_PROVIDER:-snapshot}
+      RUNTWIN_EXPORT_DIR: /app/runtime/exports
+      RUNTWIN_AI_PROVIDER: ${RUNTWIN_AI_PROVIDER:-}
+      RUNTWIN_AI_MODEL: ${RUNTWIN_AI_MODEL:-}
+      RUNTWIN_AI_EFFORT: ${RUNTWIN_AI_EFFORT:-medium}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      RUNTWIN_ANALYSIS_LABEL: ${RUNTWIN_ANALYSIS_LABEL:-RunTwin analysis}
+      RUNTWIN_LEGACY_ANALYSIS_LABELS: ${RUNTWIN_LEGACY_ANALYSIS_LABELS:-}
+      RUNTWIN_GARMIN_ENABLED: ${RUNTWIN_GARMIN_ENABLED:-0}
+      RUNTWIN_GARMIN_TOKEN_DIR: /app/garmin-tokens
+      STRAVA_CLIENT_ID: ${STRAVA_CLIENT_ID:-}
+      STRAVA_CLIENT_SECRET: ${STRAVA_CLIENT_SECRET:-}
+      STRAVA_REFRESH_TOKEN: ${STRAVA_REFRESH_TOKEN:-}
+      STRAVA_TOKEN_FILE: /app/runtime/strava-token.json
+      STRAVA_API_BASE_URL: ${STRAVA_API_BASE_URL:-https://www.strava.com/api/v3}
+      STRAVA_ATHLETE_ID: ${STRAVA_ATHLETE_ID:-}
+      TZ: Asia/Taipei
+    command: ["python", "manage.py", "run_weekly_scheduler"]
+    volumes:
+      - runtime_data:/app/runtime
+      - ./snapshots:/app/snapshots:ro
+      - ${RUNTWIN_GARMIN_HOST_TOKEN_DIR:-~/.garminconnect}:/app/garmin-tokens
+    depends_on:
+      web:
+        condition: service_healthy
+volumes:
+  postgres_data:
+  runtime_data:

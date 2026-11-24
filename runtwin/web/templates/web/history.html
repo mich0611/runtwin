@@ -1,0 +1,40 @@
+{% extends 'web/base.html' %}
+{% load static %}
+{% block title %}近三個月週報 · RunTwin{% endblock %}
+{% block meta_description %}查看 RunTwin 最近三個月的訓練週報與分析狀態{% endblock %}
+{% block content %}
+<header class="page-heading">
+  <div>
+    <p class="eyebrow">3-MONTH TRAINING ARCHIVE</p>
+    <h1>近三個月週報</h1>
+    <p>回顧最近三個月每個訓練週的重點、負荷與建議。</p>
+  </div>
+  <span id="history-count" class="count-badge" aria-live="polite">統計中</span>
+</header>
+
+<section class="history-overview" aria-label="週報時間範圍">
+  <div><span>顯示期間</span><strong id="history-range">最近三個月</strong></div>
+  <div><span>顯示方式</span><strong>最新週優先</strong></div>
+  <p>較早的週報仍保留在資料庫中，不會被刪除。</p>
+</section>
+
+<section class="history-section" aria-label="近三個月週報列表">
+  <div id="history-timeline" class="history-timeline">
+    {% for report in reports %}
+    <a class="history-card" href="{% url 'weekly_detail' report.week_start %}" data-week-start="{{ report.week_start|date:'Y-m-d' }}">
+      <span class="history-card__marker" aria-hidden="true"></span>
+      <div class="history-card__date"><small>{{ report.week_start|date:'Y' }}</small><strong>{{ report.week_start|date:'m/d' }}</strong><span>至 {{ report.week_end|date:'m/d' }}</span></div>
+      <div class="history-card__content"><strong>{{ report.rendered_summary|default:'每週訓練分析'|truncatechars:80 }}</strong><small>{{ report.model_name|default:'規則引擎' }}{% if report.generated_at %} · {{ report.generated_at|date:'m/d H:i' }}{% endif %}</small></div>
+      <span class="status-badge status-badge--{{ report.generation_status }}"><span aria-hidden="true"></span>{{ report.get_generation_status_display }}</span>
+      <span class="history-card__arrow" aria-hidden="true">›</span>
+    </a>
+    {% endfor %}
+  </div>
+  <div id="history-empty" class="empty-state empty-state--compact" hidden>
+    <div class="empty-state__icon" aria-hidden="true">◷</div>
+    <h2>近三個月尚無週報</h2>
+    <p>新週報產生後，會依時間排列在這裡。</p>
+  </div>
+</section>
+{% endblock %}
+{% block scripts %}<script src="{% static 'web/js/history.js' %}?v=20260917-1" defer></script>{% endblock %}

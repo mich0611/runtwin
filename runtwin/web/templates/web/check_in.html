@@ -1,0 +1,33 @@
+{% extends 'web/base.html' %}
+{% block title %}本週狀態 · RunTwin{% endblock %}
+{% block meta_description %}記錄本週睡眠、疲勞、痠痛與訓練動機{% endblock %}
+{% block content %}
+<header class="page-heading page-heading--narrow">
+  <div><p class="eyebrow">WEEKLY CHECK-IN · {{ week_start|date:'m/d' }} 當週</p><h1>今天的身體，準備好了嗎？</h1><p>花一分鐘記錄主觀狀態，讓下週建議不只看跑量，也看你的恢復。</p></div>
+</header>
+<div class="checkin-layout">
+  <section class="form-card" aria-labelledby="checkin-title">
+    <div class="form-card__heading"><span aria-hidden="true">✓</span><div><h2 id="checkin-title">本週狀態回報</h2><p>請依此刻的真實感受填寫，不必追求「好看」的分數。</p></div></div>
+    <form method="post" novalidate>
+      {% csrf_token %}
+      {% if form.non_field_errors %}<div class="form-errors" role="alert">{{ form.non_field_errors }}</div>{% endif %}
+      <div class="field-grid">
+      {% for field in form %}
+        <div class="form-field {% if field.name == 'notes' %}form-field--wide{% endif %} {% if field.errors %}form-field--error{% endif %}">
+          <div class="form-field__label"><label for="{{ field.id_for_label }}">{{ field.label }}</label>{% if field.name == 'sleep_quality' or field.name == 'motivation' %}<span>1 低 · 5 高</span>{% elif field.name != 'notes' %}<span>0 無 · 10 嚴重</span>{% endif %}</div>
+          {{ field }}
+          {% if field.errors %}<div class="field-errors" id="{{ field.id_for_label }}-error" role="alert">{{ field.errors }}</div>{% endif %}
+          {% if field.help_text %}<small>{{ field.help_text }}</small>{% endif %}
+        </div>
+      {% endfor %}
+      </div>
+      <button class="button button--primary" type="submit"><span>儲存本週狀態</span><b aria-hidden="true">→</b></button>
+    </form>
+  </section>
+  <aside class="checkin-aside">
+    <section class="info-card"><span class="info-card__icon" aria-hidden="true">◎</span><div><h2>這些資料怎麼用？</h2><p>疲勞、痠痛與睡眠會成為週報判讀的一部分，協助調整建議強度與恢復優先順序。</p></div></section>
+    <section class="info-card info-card--warning"><span class="info-card__icon" aria-hidden="true">!</span><div><h2>疼痛不是訓練指標</h2><p>若疼痛持續、惡化或影響日常活動，請停止造成疼痛的訓練並尋求專業評估。此工具不提供醫療診斷。</p></div></section>
+    <div class="scale-guide"><h3>填寫原則</h3><ul><li><b>睡眠與動機</b>：分數越高越好</li><li><b>疲勞、痠痛、疼痛</b>：分數越高越需要留意</li><li><b>備註</b>：可記錄壓力、天氣或其他因素</li></ul></div>
+  </aside>
+</div>
+{% endblock %}

@@ -1,0 +1,213 @@
+{% extends 'web/base.html' %}
+{% load static runtwin_tags %}
+{% block title %}訓練週報 · RunTwin{% endblock %}
+{% block meta_description %}RunTwin 每週跑步負荷、趨勢、恢復與下週建議{% endblock %}
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js" defer></script>
+{% endblock %}
+{% block content %}
+{% if not report %}
+<section class="empty-state" aria-labelledby="empty-title">
+  <div class="empty-state__icon" aria-hidden="true">↗</div>
+  <p class="eyebrow">TRAINING OVERVIEW</p>
+  <h1 id="empty-title">尚無週報</h1>
+  <p>同步 Strava 活動並產生第一份週報後，這裡會整理跑量、負荷趨勢、恢復狀態與下週建議。</p>
+  <div class="empty-state__steps">
+    <span><b>1</b> 同步活動</span><span><b>2</b> 產生週報</span><span><b>3</b> 檢視建議</span>
+  </div>
+</section>
+{% else %}
+<header class="page-heading">
+  <div>
+    <p class="eyebrow">WEEKLY TRAINING BRIEF</p>
+    <h1>{{ report.week_start|date:'m/d' }} — {{ report.week_end|date:'m/d' }} 訓練週報</h1>
+    <p>用最重要的訊號，快速掌握本週訓練與下一步。</p>
+  </div>
+  <span class="status-badge status-badge--{{ report.generation_status }}">
+    <span aria-hidden="true"></span>{{ report.get_generation_status_display }}
+  </span>
+</header>
+
+{% if report.error_message %}
+<div class="notice notice--danger" role="alert"><strong>週報產生異常</strong><p>{{ report.error_message }}</p></div>
+{% endif %}
+
+{% for flag in facts.trends.anomaly_flags %}
+<div class="notice {% if flag.severity == 'high' %}notice--danger{% else %}notice--warning{% endif %}" role="status">
+  <strong>{% if flag.severity == 'high' %}高幅度變化{% else %}訓練量提醒{% endif %}</strong>
+  <p>{{ flag.message }}</p>
+</div>
+{% endfor %}
+
+<section class="summary-card" aria-labelledby="summary-title">
+  <div class="summary-card__accent" aria-hidden="true"></div>
+  <div class="summary-card__content">
+    <p class="section-kicker">本週判讀</p>
+    <h2 id="summary-title">{{ ai.executive_summary|default:'週報數據已整理，分析內容準備中。' }}</h2>
+    {% if ai.weekly_snapshot %}
+    <ul class="snapshot-list">
+      {% for item in ai.weekly_snapshot %}<li>{{ item }}</li>{% endfor %}
+    </ul>
+    {% endif %}
+  </div>
+  <aside class="priority-compact">
+    <span>下週首要方向</span>
+    <strong>{{ ai.next_week_priority|default:'等待更多資料' }}</strong>
+  </aside>
+</section>
+
+<section class="dashboard-section" aria-labelledby="metrics-title">
+  <div class="section-heading">
+    <div><p class="section-kicker">AT A GLANCE</p><h2 id="metrics-title">本週核心數據</h2></div>
+    <span class="section-note">所有數字皆由活動資料直接計算</span>
+  </div>
+  <div class="metric-grid">
+    <article class="metric-card metric-card--primary">
+      <div class="metric-card__icon" aria-hidden="true">↗</div>
+      <span>總跑量</span><strong>{{ facts.metrics.total_distance.value|default_if_none:'—' }}</strong><small>公里</small>
+      {% if facts.comparisons.distance_vs_four_week_average.status == 'ok' %}<em class="delta {% if facts.comparisons.distance_vs_four_week_average.value > 0 %}delta--up{% else %}delta--down{% endif %}">{{ facts.comparisons.distance_vs_four_week_average.value|floatformat:1 }}% vs 四週平均</em>{% endif %}
+    </article>
+    <article class="metric-card"><div class="metric-card__icon" aria-hidden="true">◷</div><span>移動時間</span><strong>{{ facts.metrics.total_moving_time.value|default_if_none:'—' }}</strong><small>分鐘</small></article>
+    <article class="metric-card"><div class="metric-card__icon" aria-hidden="true">⌁</div><span>跑步次數</span><strong>{{ facts.metrics.run_count.value|default_if_none:'0' }}</strong><small>次</small></article>
+    <article class="metric-card"><div class="metric-card__icon" aria-hidden="true">△</div><span>總爬升</span><strong>{{ facts.metrics.total_elevation_gain.value|default_if_none:'—' }}</strong><small>公尺</small></article>
+    <article class="metric-card"><div class="metric-card__icon" aria-hidden="true">⟷</div><span>平均配速</span><strong>{{ facts.metrics.average_pace.value|pace }}</strong><small>{% if facts.metrics.average_pace.status == 'insufficient_data' %}資料不足{% else %}每公里{% endif %}</small></article>
+    <article class="metric-card"><div class="metric-card__icon" aria-hidden="true">♡</div><span>平均心率</span><strong>{{ facts.metrics.average_hr.value|default_if_none:'—' }}</strong><small>bpm</small></article>
+    <article class="metric-card"><div class="metric-card__icon" aria-hidden="true">◇</div><span>最長跑</span><strong>{{ facts.metrics.longest_run_distance.value|default_if_none:'—' }}</strong><small>公里</small></article>
+    <article class="metric-card"><div class="metric-card__icon" aria-hidden="true">⚡</div><span>品質課</span><strong>{{ facts.metrics.quality_session_count.value|default_if_none:'0' }}</strong><small>次</small></article>
+  </div>
+</section>
+
+<section class="dashboard-section" aria-labelledby="trends-title">
+  <div class="section-heading"><div><p class="section-kicker">6-WEEK TREND</p><h2 id="trends-title">訓練趨勢</h2></div><span class="section-note">看方向，不只看單週高低</span></div>
+  <div class="chart-grid">
+    <article class="chart-card chart-card--wide">
+      <header><div><span>週跑量</span><strong>最近六週</strong></div><i class="legend-dot legend-dot--green">公里</i></header>
+      <div id="distanceChart" class="chart" role="img" aria-label="最近六週跑量折線圖"><p class="chart-fallback">圖表載入中…</p></div>
+    </article>
+    <article class="chart-card">
+      <header><div><span>訓練結構</span><strong>課表類型</strong></div></header>
+      <div id="classChart" class="chart" role="img" aria-label="本週課表類型圓餅圖"><p class="chart-fallback">圖表載入中…</p></div>
+    </article>
+  </div>
+  <details class="accessible-data">
+    <summary>查看六週數據表</summary>
+    <div class="table-region" tabindex="0" role="region" aria-label="六週訓練數據">
+      <table><caption>最近六週訓練量</caption><thead><tr><th scope="col">週起始日</th><th scope="col">距離</th><th scope="col">時間</th><th scope="col">爬升</th><th scope="col">次數</th></tr></thead>
+      <tbody>{% for week in facts.trends.six_week %}<tr><td>{{ week.week_start }}</td><td>{{ week.distance_km }} km</td><td>{{ week.moving_minutes }} 分</td><td>{{ week.elevation_m }} m</td><td>{{ week.run_count }}</td></tr>{% endfor %}</tbody></table>
+    </div>
+  </details>
+</section>
+
+<section class="dashboard-section" aria-labelledby="progress-factors-title">
+  <div class="section-heading">
+    <div><p class="section-kicker">PERSONAL PROGRESS MODEL</p><h2 id="progress-factors-title">進步關鍵因素</h2></div>
+    <span class="status-badge status-badge--{{ progress.status }}"><span aria-hidden="true"></span>{{ progress.confidence|default:'low' }} confidence</span>
+  </div>
+  <article class="progress-model-card">
+    <section class="progress-narrative" aria-labelledby="progress-narrative-title">
+      <div class="progress-narrative__label"><span id="progress-narrative-title">AI 白話解讀</span><small>{{ progress_narrative.source }}</small></div>
+      <div class="analysis-text">{{ progress_narrative.text|linebreaks }}</div>
+    </section>
+    <header>
+      <div><strong>{{ progress.summary }}</strong><p>觀察指標：{{ progress.outcome_label }}。模型只使用完整週，並比較本週因素與下一週效率，以降低同週反向解讀。</p></div>
+      <dl><div><dt>完整週</dt><dd>{{ progress.complete_week_count }}</dd></div><div><dt>有效結果週</dt><dd>{{ progress.outcome_week_count }}</dd></div><div><dt>Garmin 資料週</dt><dd>{{ progress.garmin_week_count|default:0 }}</dd></div></dl>
+    </header>
+    {% with ctx=progress.training_context %}
+    {% if ctx.window_weeks %}
+    <section class="training-context" aria-labelledby="training-context-title">
+      <h3 id="training-context-title">近 {{ ctx.window_weeks }} 週訓練脈絡{% if not ctx.sufficient_for_trend %}<small>有跑步的週數不足 6 週，趨勢僅供參考</small>{% endif %}</h3>
+      <div class="factor-grid">
+        <article class="factor-card"><div><span>① 週跑量</span><em>{{ ctx.run_count }} 趟</em></div><strong>平均 {{ ctx.average_weekly_distance_km }} km／週</strong><p>近 4 週 {{ ctx.recent_4_week_distance_km }} km／週</p></article>
+        <article class="factor-card"><div><span>② 各分類次數</span></div><strong>{% for key, value in ctx.workout_class_counts.items %}{{ key|workout_label }} {{ value }}{% if not forloop.last %}、{% endif %}{% empty %}無{% endfor %}</strong></article>
+        <article class="factor-card"><div><span>③ 長跑次數</span></div><strong>{{ ctx.long_run_count }} 次</strong><p>{{ ctx.window_weeks }} 週內</p></article>
+        <article class="factor-card"><div><span>④ Easy 跑效率趨勢</span><em>n={{ ctx.easy_efficiency_trend.sample_count }}</em></div>{% if ctx.easy_efficiency_trend.later_minus_earlier != None %}<strong>{{ ctx.easy_efficiency_trend.earlier_half_mean }} → {{ ctx.easy_efficiency_trend.later_half_mean }}</strong><p>m/min/bpm，後段減前段 {{ ctx.easy_efficiency_trend.later_minus_earlier }}（越高越好）</p>{% else %}<strong>樣本不足</strong>{% endif %}</article>
+        <article class="factor-card"><div><span>⑤ 穩定跑心率漂移趨勢</span><em>n={{ ctx.steady_hr_drift_trend.sample_count }}</em></div>{% if ctx.steady_hr_drift_trend.later_minus_earlier != None %}<strong>{{ ctx.steady_hr_drift_trend.earlier_half_mean }}% → {{ ctx.steady_hr_drift_trend.later_half_mean }}%</strong><p>後段減前段 {{ ctx.steady_hr_drift_trend.later_minus_earlier }}（越低越好）</p>{% else %}<strong>樣本不足</strong>{% endif %}</article>
+        <article class="factor-card factor-card--garmin"><div><span>Garmin 補充</span><em>{{ ctx.garmin.matched_run_count }} 趟</em></div>{% if ctx.garmin.matched_run_count %}<strong>週訓練負荷 {{ ctx.garmin.average_weekly_training_load|default:'—' }} · 有氧 TE {{ ctx.garmin.average_aerobic_training_effect|default:'—' }}</strong><p>Z1–Z2 占比 {{ ctx.garmin.z1_z2_share_percent|default:'—' }}% · 高露點 {{ ctx.garmin.high_dew_point_runs }} 次</p>{% else %}<strong>沒有可配對的 Garmin 資料</strong>{% endif %}</article>
+      </div>
+    </section>
+    {% endif %}
+    {% endwith %}
+    {% if progress.factors %}
+    <div class="factor-grid">
+      {% for factor in progress.factors %}
+      <article class="factor-card factor-card--{{ factor.confidence }}{% if factor.source == 'garmin' %} factor-card--garmin{% endif %}">
+        <div><span>{{ factor.label }}</span><em>{% if factor.source == 'garmin' %}Garmin · {% endif %}{{ factor.strength }} · {{ factor.confidence }}</em></div>
+        <strong>{{ factor.direction_text }}</strong>
+        <p>Spearman ρ {{ factor.correlation }} · n={{ factor.sample_size }}{% if factor.recent_value != None %} · 近四週 {{ factor.recent_value }} {{ factor.unit }}{% endif %}</p>
+      </article>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="empty-inline">累積更多具心率與配速資料的完整訓練週後，這裡會自動更新個人化關聯。</p>
+    {% endif %}
+    <details class="model-limitations"><summary>如何解讀與限制</summary><ul>{% for item in progress.limitations %}<li>{{ item }}</li>{% endfor %}</ul><small>模型版本 {{ progress.model_version }}</small></details>
+  </article>
+</section>
+
+<div class="dashboard-columns">
+  <section class="dashboard-section" aria-labelledby="signals-title">
+    <div class="section-heading"><div><p class="section-kicker">COACHING SIGNALS</p><h2 id="signals-title">本週訊號</h2></div></div>
+    <div class="signal-stack">
+      {% for item in ai.positives %}{% include 'web/insight.html' with item=item tone='positive' icon='✓' %}{% empty %}<p class="empty-inline">目前沒有足夠證據產生正向結論。</p>{% endfor %}
+      {% for item in ai.concerns %}{% include 'web/insight.html' with item=item tone='warning' icon='!' %}{% empty %}<p class="empty-inline">目前沒有需要特別標記的項目。</p>{% endfor %}
+    </div>
+  </section>
+  <section class="dashboard-section" aria-labelledby="goal-title">
+    <div class="section-heading"><div><p class="section-kicker">GOAL READINESS</p><h2 id="goal-title">目標能力缺口</h2></div></div>
+    <div class="signal-stack">
+      {% for item in ai.goal_gap %}{% include 'web/insight.html' with item=item tone='neutral' icon='→' %}{% empty %}<p class="empty-inline">目前資料不足，尚無可靠缺口可標記。</p>{% endfor %}
+    </div>
+  </section>
+</div>
+
+<section class="dashboard-section" aria-labelledby="plan-title">
+  <div class="section-heading"><div><p class="section-kicker">NEXT WEEK</p><h2 id="plan-title">建議課表</h2></div><span class="section-note">依恢復狀況彈性調整，不連續安排高強度</span></div>
+  <div class="session-grid">
+    {% for session in ai.suggested_sessions %}
+    <article class="session-card">
+      <header><div class="session-card__day">{{ session.day }}</div><div><span>{{ session.purpose }}</span><strong>{{ session.main_set }}</strong></div></header>
+      <dl><dt>熱身</dt><dd>{{ session.warmup }}</dd><dt>強度</dt><dd>{{ session.intensity }}</dd><dt>收操</dt><dd>{{ session.cooldown }}</dd></dl>
+      <details><summary>為什麼這樣安排？</summary><p>{{ session.evidence }}</p><p><b>備案：</b>{{ session.fallback }}</p></details>
+    </article>
+    {% empty %}<p class="empty-inline">目前沒有足夠資料產生建議課表。</p>{% endfor %}
+  </div>
+</section>
+
+{% if facts.wellbeing %}
+<section class="wellbeing-strip" aria-labelledby="wellbeing-title">
+  <div><p class="section-kicker">RECOVERY CHECK</p><h2 id="wellbeing-title">本週身體狀態</h2><p>{{ facts.wellbeing.notes|default:'已完成本週狀態回報。' }}</p></div>
+  <div class="wellbeing-metrics"><span>睡眠 <b>{{ facts.wellbeing.sleep_quality }}/5</b></span><span>疲勞 <b>{{ facts.wellbeing.fatigue }}/10</b></span><span>痠痛 <b>{{ facts.wellbeing.soreness }}/10</b></span><span>膝部 <b>{{ facts.wellbeing.knee_pain }}/10</b></span><span>動機 <b>{{ facts.wellbeing.motivation }}/5</b></span></div>
+  <a class="text-link" href="{% url 'check_in' %}">更新狀態 →</a>
+</section>
+{% endif %}
+
+<section class="dashboard-section" aria-labelledby="activities-title">
+  <div class="section-heading"><div><p class="section-kicker">ACTIVITY LOG</p><h2 id="activities-title">本週活動</h2></div><span class="section-note">點選活動查看判讀依據</span></div>
+  <div class="activity-list">
+    {% for activity in facts.activity_facts %}
+    <a class="activity-row" href="{% url 'activity_detail' activity.activity_id %}">
+      <span class="activity-row__date">{{ activity.date|slice:'5:' }}</span>
+      <span class="activity-row__main"><strong>{{ activity.name }}</strong><small>{{ activity.workout_class|workout_label }} · {{ activity.moving_minutes }} 分鐘</small></span>
+      <span class="activity-row__metric"><strong>{{ activity.distance_km }}</strong><small>km</small></span>
+      <span class="activity-row__metric"><strong>{{ activity.average_pace_seconds_per_km|pace }}</strong><small>平均配速</small></span>
+      <span class="activity-row__metric"><strong>{{ activity.average_hr_bpm|default_if_none:'—' }}</strong><small>bpm</small></span>
+      <span class="quality-score {% if activity.data_quality_score >= 80 %}quality-score--good{% elif activity.data_quality_score >= 60 %}quality-score--fair{% else %}quality-score--low{% endif %}">{{ activity.data_quality_score|floatformat:0 }}</span>
+      <span class="activity-row__arrow" aria-hidden="true">›</span>
+    </a>
+    {% empty %}<p class="empty-inline">本週沒有跑步活動。</p>{% endfor %}
+  </div>
+</section>
+
+<section class="disclosure-card">
+  <details>
+    <summary><span>資料品質與分析限制</span><small>平均品質 {{ facts.quality.average_score|default_if_none:'—' }}/100 · 心率覆蓋 {% widthratio facts.quality.hr_activity_coverage 1 100 %}%</small></summary>
+    <div class="disclosure-card__body"><p>{{ ai.recovery_note }}</p><ul>{% for item in ai.data_limitations %}<li>{{ item }}</li>{% empty %}<li>尚無其他限制資訊。</li>{% endfor %}</ul></div>
+  </details>
+</section>
+
+<footer class="report-meta">報告版本 {{ report.report_version }} · {{ report.model_name|default:'規則引擎' }}{% if report.generated_at %} · 產生於 {{ report.generated_at|date:'Y-m-d H:i' }}{% endif %}</footer>
+
+{{ chart_payload|json_script:'chart-data' }}
+{% endif %}
+{% endblock %}
+{% block scripts %}{% if report %}<script src="{% static 'web/js/charts.js' %}?v=20260917-2" defer></script>{% endif %}{% endblock %}

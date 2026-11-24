@@ -1,0 +1,23 @@
+{
+  "schema_version": "runtwin-mcp-snapshot-v1",
+  "exported_at": "2026-09-01T00:00:00+08:00",
+  "privacy": "Synthetic anonymous data; no real GPS coordinates.",
+  "activities": [
+    {"id":"fx-easy-1","name":"Easy Run","description":"輕鬆有氧","sport_type":"Run","start_local":"2026-08-24T06:20:00+08:00","summary":{"distance":9000,"moving_time":2880,"elapsed_time":2910,"elevation_gain":35,"average_heartrate":139,"max_heartrate":149}},
+    {"id":"fx-interval-1","name":"6 x 800m","description":"間歇，組間慢跑","sport_type":"Run","start_local":"2026-08-26T19:30:00+08:00","summary":{"distance":11000,"moving_time":3300,"elapsed_time":3420,"elevation_gain":20,"average_heartrate":154,"max_heartrate":174}},
+    {"id":"fx-recovery-1","name":"Recovery Run","description":"恢復跑","sport_type":"Run","start_local":"2026-08-28T06:10:00+08:00","summary":{"distance":7000,"moving_time":2380,"elapsed_time":2400,"elevation_gain":15,"average_heartrate":132,"max_heartrate":143}},
+    {"id":"fx-long-1","name":"Weekend Long Run","description":"週末長跑","sport_type":"Run","start_local":"2026-08-30T05:40:00+08:00","summary":{"distance":19000,"moving_time":5700,"elapsed_time":5760,"elevation_gain":85,"average_heartrate":145,"max_heartrate":160}},
+    {"id":"fx-progression-1","name":"Progression Run","description":"後段漸速","sport_type":"Run","start_local":"2026-08-16T06:00:00+08:00","summary":{"distance":14000,"moving_time":4300,"elapsed_time":4320,"elevation_gain":30,"average_heartrate":151,"max_heartrate":170}},
+    {"id":"fx-tempo-1","name":"Tempo","description":"20 分鐘穩定節奏","sport_type":"Run","start_local":"2026-08-11T19:30:00+08:00","summary":{"distance":10000,"moving_time":2700,"elapsed_time":2720,"elevation_gain":10,"average_heartrate":160,"max_heartrate":169}},
+    {"id":"fx-missing-hr","name":"Easy without HR","description":"沒有心率","sport_type":"Run","start_local":"2026-08-04T06:10:00+08:00","summary":{"distance":8000,"moving_time":2600,"elapsed_time":2610,"elevation_gain":20}}
+  ],
+  "streams": {
+    "fx-easy-1":{"time":[0,600,1200,1800,2400,2880],"distance":[0,1850,3720,5590,7460,9000],"heart_rate":[108,136,139,141,142,144],"velocity_smooth":[0,3.08,3.12,3.12,3.12,3.2],"altitude":[10,12,14,13,15,14],"cadence":[0,88,89,89,89,90],"moving":[false,true,true,true,true,true]},
+    "fx-interval-1":{"time":[0,600,900,1080,1380,1560,1860,2040,2340,2520,2820,3000,3300],"distance":[0,1800,3000,3400,4600,5000,6200,6600,7800,8200,9400,9800,11000],"heart_rate":[105,138,165,143,168,145,169,146,170,147,170,145,152],"velocity_smooth":[0,3,4.4,2.3,4.45,2.4,4.42,2.35,4.5,2.4,4.48,2.3,3.1],"altitude":[10,10,10,10,10,10,10,10,10,10,10,10,10],"cadence":[0,89,94,87,94,87,94,87,95,87,94,87,90],"moving":[false,true,true,true,true,true,true,true,true,true,true,true,true]},
+    "fx-recovery-1":{"time":[0,600,1200,1800,2380],"distance":[0,1750,3500,5250,7000],"heart_rate":[103,129,132,134,136],"velocity_smooth":[0,2.92,2.92,2.92,3.0],"altitude":[9,9,10,9,10],"cadence":[0,87,87,88,88],"moving":[false,true,true,true,true]},
+    "fx-long-1":{"time":[0,900,1800,2700,3600,4500,5700],"distance":[0,3000,6000,9000,12000,15000,19000],"heart_rate":[105,137,141,144,146,148,151],"velocity_smooth":[0,3.33,3.33,3.33,3.33,3.33,3.33],"altitude":[8,10,11,9,12,10,8],"cadence":[0,89,89,89,90,90,90],"moving":[false,true,true,true,true,true,true]},
+    "fx-progression-1":{"time":[0,700,1400,2100,2800,3500,4300],"distance":[0,2000,4100,6300,8700,11200,14000],"heart_rate":[105,135,141,147,154,162,169],"velocity_smooth":[0,2.86,3.0,3.14,3.43,3.57,3.7],"altitude":[10,10,10,10,10,10,10],"cadence":[0,88,89,90,91,92,93],"moving":[false,true,true,true,true,true,true]},
+    "fx-tempo-1":{"time":[0,450,900,1350,1800,2250,2700],"distance":[0,1500,3150,4850,6550,8250,10000],"heart_rate":[105,142,157,162,164,165,166],"velocity_smooth":[0,3.33,3.67,3.78,3.78,3.78,3.89],"altitude":[10,10,10,10,10,10,10],"cadence":[0,89,92,93,93,93,94],"moving":[false,true,true,true,true,true,true]},
+    "fx-missing-hr":{"time":[0,650,1300,1950,2600],"distance":[0,2000,4000,6000,8000],"velocity_smooth":[0,3.08,3.08,3.08,3.08],"altitude":[10,10,10,10,10],"cadence":[0,88,88,88,88],"moving":[false,true,true,true,true]}
+  }
+}

@@ -1,0 +1,68 @@
+{% extends 'web/base.html' %}
+{% load runtwin_tags %}
+{% block title %}{{ activity.name }} · RunTwin{% endblock %}
+{% block meta_description %}{{ activity.name }} 的跑步數據、分類依據與訓練分析{% endblock %}
+{% block content %}
+<a class="back-link" href="{% url 'weekly_latest' %}">← 返回週報</a>
+<header class="activity-hero">
+  <div>
+    <div class="activity-hero__meta">
+      <span>{{ activity.start_time|date:'Y年m月d日 H:i' }}</span>
+      <span>{{ activity.sport_type }}</span>
+      <span>ID {{ activity.strava_activity_id }}</span>
+    </div>
+    <h1>{{ activity.name }}</h1>
+    {% if activity.description %}<p>{{ activity.description }}</p>{% endif %}
+  </div>
+  <div class="workout-badge"><small>系統判定</small><strong>{{ activity.get_workout_class_display }}</strong><span>{{ activity.classification_confidence|confidence_percent }} 信心</span></div>
+</header>
+
+<section class="dashboard-section" aria-labelledby="activity-metrics-title">
+  <div class="section-heading"><div><p class="section-kicker">ACTIVITY SUMMARY</p><h2 id="activity-metrics-title">活動摘要</h2></div></div>
+  <div class="metric-grid metric-grid--activity">
+    <article class="metric-card metric-card--primary"><div class="metric-card__icon" aria-hidden="true">↗</div><span>距離</span><strong>{{ activity.distance|km }}</strong><small>公里</small></article>
+    <article class="metric-card"><div class="metric-card__icon" aria-hidden="true">⟷</div><span>平均配速</span><strong>{{ activity.average_pace|pace }}</strong><small>每公里</small></article>
+    <article class="metric-card"><div class="metric-card__icon" aria-hidden="true">◷</div><span>移動時間</span><strong>{{ activity.moving_time|duration }}</strong><small>經過 {{ activity.elapsed_time|duration }}</small></article>
+    <article class="metric-card"><div class="metric-card__icon" aria-hidden="true">△</div><span>爬升</span><strong>{{ activity.elevation_gain|floatformat:0 }}</strong><small>公尺</small></article>
+    <article class="metric-card"><div class="metric-card__icon" aria-hidden="true">♡</div><span>平均心率</span><strong>{{ activity.average_hr|default_if_none:'—'|floatformat:0 }}</strong><small>{% if activity.max_hr %}最高 {{ activity.max_hr|floatformat:0 }}{% else %}bpm{% endif %}</small></article>
+    <article class="metric-card"><div class="metric-card__icon" aria-hidden="true">◇</div><span>資料品質</span><strong>{{ activity.data_quality_score|floatformat:0 }}</strong><small>/ 100</small></article>
+  </div>
+</section>
+
+<div class="detail-grid">
+  <section class="panel-card" aria-labelledby="classification-title">
+    <header class="panel-card__header"><div><p class="section-kicker">CLASSIFICATION</p><h2 id="classification-title">為什麼是{{ activity.get_workout_class_display }}？</h2></div><span class="confidence confidence--{% if activity.classification_confidence >= 0.8 %}high{% elif activity.classification_confidence >= 0.55 %}medium{% else %}low{% endif %}">{{ activity.classification_confidence|confidence_percent }}</span></header>
+    <ol class="reason-list">{% for reason in activity.classification_reasons %}<li><span>{{ forloop.counter }}</span>{{ reason }}</li>{% empty %}<li><span>—</span>目前沒有足夠分類依據。</li>{% endfor %}</ol>
+    <p class="panel-card__meta">分類器 {{ activity.classifier_version }}</p>
+  </section>
+  <section class="panel-card" aria-labelledby="quality-title">
+    <header class="panel-card__header"><div><p class="section-kicker">DATA QUALITY</p><h2 id="quality-title">資料完整度</h2></div><span class="quality-score {% if activity.data_quality_score >= 80 %}quality-score--good{% elif activity.data_quality_score >= 60 %}quality-score--fair{% else %}quality-score--low{% endif %}">{{ activity.data_quality_score|floatformat:0 }}</span></header>
+    <div class="stream-status"><span class="{% if activity.has_hr_stream %}is-available{% endif %}">心率 <b>{{ activity.has_hr_stream|yesno:'有,無' }}</b></span><span class="{% if activity.has_pace_stream %}is-available{% endif %}">配速 <b>{{ activity.has_pace_stream|yesno:'有,無' }}</b></span><span class="{% if activity.has_altitude_stream %}is-available{% endif %}">海拔 <b>{{ activity.has_altitude_stream|yesno:'有,無' }}</b></span></div>
+    <ul class="quality-issues">{% for issue in activity.quality_issues %}<li class="quality-issues--{{ issue.severity }}"><b>{{ issue.code }}</b>{{ issue.message }}</li>{% empty %}<li class="quality-issues--good"><b>✓</b>未偵測到資料品質問題。</li>{% endfor %}</ul>
+    <p class="panel-card__meta">檢查器 {{ activity.quality_version }}</p>
+  </section>
+</div>
+
+<section class="analysis-card" aria-labelledby="analysis-title">
+  <header><div><p class="section-kicker">COACH'S NOTE</p><h2 id="analysis-title">活動分析與建議</h2></div>{% if activity.analysis_source %}<span>{{ activity.analysis_source }}</span>{% endif %}</header>
+  {% if activity.analysis %}<div class="analysis-text">{{ activity.analysis|linebreaks }}</div>{% else %}<p class="empty-inline">尚無分析結果。</p>{% endif %}
+  {% if activity.analysis_generated_at %}<footer>產生於 {{ activity.analysis_generated_at|date:'Y-m-d H:i' }} · {{ activity.analysis_version }}</footer>{% endif %}
+</section>
+
+<section class="dashboard-section" aria-labelledby="features-title">
+  <div class="section-heading"><div><p class="section-kicker">RUN DYNAMICS</p><h2 id="features-title">跑步特徵</h2></div><span class="section-note">由 streams 確定性計算</span></div>
+  {% with features=activity.stream_features %}
+  <div class="feature-grid">
+    <article><span>中位配速</span><strong>{{ features.median_pace_seconds_per_km|pace }}</strong></article>
+    <article><span>中位心率</span><strong>{{ features.median_hr_bpm|default_if_none:'—'|floatformat:0 }}{% if features.median_hr_bpm %}<small>bpm</small>{% endif %}</strong></article>
+    <article><span>中位步頻</span><strong>{{ features.median_cadence_spm|default_if_none:'—'|floatformat:0 }}{% if features.median_cadence_spm %}<small>spm</small>{% endif %}</strong></article>
+    <article><span>心率漂移</span><strong>{{ features.hr_drift_percent|signed_percent }}</strong></article>
+    <article><span>後半速度比</span><strong>{{ features.progression_ratio|ratio_percent }}</strong></article>
+    <article><span>高速區段</span><strong>{{ features.fast_block_count|default_if_none:'—' }}</strong></article>
+    <article><span>速度變異</span><strong>{{ features.speed_variability|as_percent }}</strong></article>
+    <article><span>穩定跑</span><strong>{{ features.steady_run|yesno:'是,否,—' }}</strong></article>
+  </div>
+  {% endwith %}
+  <p class="privacy-note"><span aria-hidden="true">⌾</span> 基於隱私，GPS 路線不在此頁顯示。</p>
+</section>
+{% endblock %}

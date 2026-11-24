@@ -1,0 +1,19 @@
+{% load runtwin_tags %}
+<article class="insight-card insight-card--{{ tone }}">
+  <div class="insight-card__icon" aria-hidden="true">{{ icon|default:'•' }}</div>
+  <div class="insight-card__body">
+    <header>
+      <strong>{{ item.claim }}</strong>
+      <span class="confidence confidence--{{ item.confidence }}">{{ item.confidence|confidence_label }}</span>
+    </header>
+    <p>{{ item.reasoning }}</p>
+    <details>
+      <summary>查看判讀證據 <span aria-hidden="true">＋</span></summary>
+      <ul class="evidence-list">
+        {% for evidence in item.evidence %}
+        <li><span>{{ evidence.metric_name }}</span><b>{{ evidence.metric_value }}</b>{% if evidence.activity_id %}<a href="{% url 'activity_detail' evidence.activity_id %}">{{ evidence.date }} · {{ evidence.activity_name }}</a>{% endif %}</li>
+        {% empty %}<li>沒有可列出的證據項目。</li>{% endfor %}
+      </ul>
+    </details>
+  </div>
+</article>
