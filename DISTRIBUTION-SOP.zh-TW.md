@@ -22,6 +22,7 @@
 
 - Anthropic 或 OpenAI API key：用 LLM 產生較完整的單次活動分析；沒有也能使用規則式 fallback。
 - Docker Desktop：若想使用 PostgreSQL 與容器常駐服務。第一次使用建議先依本文的「Windows 本機模式」。
+- Garmin Connect 帳號：若你也用 Garmin 手錶記錄跑步（第 7 節）。
 - 公開 HTTPS 網域／Tunnel：只有即時 Webhook 需要；不設定也能由 worker 每小時補抓。
 
 ## 1. 取得原始碼
@@ -82,43 +83,70 @@ RUNTWIN_ADMIN_EMAIL=
 
 `.env` 含密碼和 token，不能上傳、傳給別人或提交至版本控制。
 
-## 4. 建立自己的 Strava API Application
+## 4. 連接 Strava
 
-1. 登入 Strava。
-2. 開啟 <https://www.strava.com/settings/api>。
-3. 建立 Application。
-4. Website 可先填本機用途的說明網址。
-5. Authorization Callback Domain 在本機測試可填 `localhost`。
-6. 保存自己的 Client ID 與 Client Secret。
-7. OAuth 授權需包含：
-   - `activity:read_all`：讀取包含 Only Me 在內的活動。
-   - `activity:write`：回填 `[Easy]`、`[Long]` 等標題與分析區塊。
+RunTwin 透過**你自己的** Strava API Application 存取 Strava：先建立一次，再授權它存取你的帳號。
 
-確認 `.env` 已由範本建立，然後執行內附的本機 OAuth 輔助工具：
+### 4.1 建立 API Application
+
+1. 用瀏覽器登入 Strava，開啟 <https://www.strava.com/settings/api>。
+2. 填寫表單：
+   | 欄位 | 填寫內容 |
+   |---|---|
+   | Application Name | 任意名稱，例如 `My RunTwin` |
+   | Category | `Training`（任何類別都可以） |
+   | Website | 任意網址，例如 `http://localhost` |
+   | Authorization Callback Domain | `localhost`（只填這個字，不要加 `http://` 或 port） |
+3. 若 Strava 要求上傳圖示，任意圖片即可，並同意 API 條款。
+4. 在 App 頁面複製 **Client ID**（數字）與 **Client Secret**（按 *show* 顯示）。Secret 要當成密碼保管。
+
+### 4.2 授權你的帳號
+
+在 RunTwin 資料夾執行內附工具：
 
 ```powershell
 .venv\Scripts\python.exe scripts\configure_strava_oauth.py
 ```
 
-依提示輸入自己的 Client ID 與 Client Secret。工具會：
+1. 依提示貼上 Client ID 與 Client Secret。
+2. 瀏覽器會開啟 Strava 授權頁。**兩個權限勾選框都要保持勾選**，再按 **Authorize**：
+   - *View data about your private activities*（`activity:read_all`）：讀取所有跑步，包含 Only Me 活動。
+   - *Upload your activities … to Strava*（`activity:write`）：寫入 `[Easy]`／`[Long]` 標題與分析區塊。
+3. 瀏覽器顯示 *"Strava authorization received. You can close this window."*
+4. 終端機顯示 `Updated .env with this athlete's Strava OAuth settings.`
 
-1. 開啟 Strava 授權頁。
-2. 在 `http://localhost:8765/callback` 接收一次性 authorization code。
-3. 向 Strava 交換 token。
-4. 將自己的 Client ID、Client Secret、refresh token 與 athlete ID 寫入 `.env`。
-
-因此 Strava App 的 Authorization Callback Domain 請填 `localhost`。`.env` 更新後會包含：
+工具會等待 5 分鐘，完成後寫入 `.env`：
 
 ```dotenv
 STRAVA_CLIENT_ID=你的Client ID
 STRAVA_CLIENT_SECRET=你的Client Secret
 STRAVA_REFRESH_TOKEN=你的Refresh Token
 STRAVA_ATHLETE_ID=你的數字Athlete ID
-STRAVA_TOKEN_FILE=runtime/strava-token.json
-STRAVA_API_BASE_URL=https://www.strava.com/api/v3
 ```
 
-若防火牆阻擋本機 callback，可改依 Strava 官方 OAuth 文件手動取得 refresh token：<https://developers.strava.com/docs/authentication/>。
+之後 RunTwin 會自動更新 access token，並把旋轉後的 token 存到 `STRAVA_TOKEN_FILE`。除非你撤銷授權，否則不需要重做。
+
+### 4.3 確認連線
+
+```powershell
+.venv\Scripts\python.exe manage.py migrate
+.venv\Scripts\python.exe manage.py sync_strava_activities
+```
+
+沒有錯誤並顯示匯入的活動數量，就代表 Strava 已連上。
+
+### 4.4 常見問題
+
+| 症狀 | 解法 |
+|---|---|
+| Strava 頁面顯示 `redirect_uri invalid` | Authorization Callback Domain 必須剛好是 `localhost`。 |
+| `Authorization is missing required permissions` | 有權限被取消勾選。重新執行工具，兩個都保持勾選。 |
+| `Timed out waiting for the Strava redirect` | 重新執行，並在 5 分鐘內完成授權。 |
+| 瀏覽器打不開 `localhost:8765` | 8765 port 被佔用或被防火牆擋住，改用 `--redirect-uri http://localhost:8766/callback`。 |
+| 沒有瀏覽器（伺服器、SSH） | 加 `--no-browser`，在任何已登入 Strava 的裝置開啟印出的網址，再把最後跳轉的 `localhost` 網址拿到 RunTwin 這台電腦開啟；或依 Strava 官方 OAuth 文件手動取得：<https://developers.strava.com/docs/authentication/>。 |
+| `sync_strava_activities` 回傳 `401` | Client secret 錯誤或授權已撤銷，重新執行工具。 |
+
+之後若要中斷連線，到 <https://www.strava.com/settings/apps> 撤銷 RunTwin 的授權。
 
 ## 5. 設定 AI 分析（選配）
 
@@ -172,7 +200,46 @@ RUNTWIN_AI_MODEL=
 
 不要直接沿用別人的數值。資料不足的欄位可先留空；一般週跑量與平日距離上限若未知可先填 `0`。
 
-## 7. 首次同步與測試
+## 7. 連接 Garmin（選配）
+
+Strava 仍是主要資料來源。若你也用 Garmin 手錶記錄跑步，RunTwin 可以在每次分析加入 Strava 沒有的 Garmin 指標：訓練效果、訓練負荷、心率區間、跑姿、Body Battery、VO2max 與天氣。不接 Garmin 也能完整使用。
+
+> Garmin Connect 沒有提供給個人專案的官方 API。RunTwin 使用非官方的 `garminconnect` 套件，Garmin 改版登入流程時可能失效。Garmin 出錯不會影響 Strava 分析。
+
+### 7.1 登入一次
+
+```powershell
+.venv\Scripts\python.exe scripts\configure_garmin_auth.py
+```
+
+1. 輸入 Garmin Connect 的 email 和密碼。密碼只用這一次，不會被儲存。
+2. 帳號有開兩步驟驗證的話，在 `Garmin MFA code:` 提示輸入 Garmin 寄給你的驗證碼。
+3. 終端機顯示 `Garmin tokens saved to ...` 和 `Updated .env: RUNTWIN_GARMIN_ENABLED=1 ...` 就完成了。
+
+Token 會存在 `~/.garminconnect`（Windows 是 `C:\Users\<你的使用者>\.garminconnect`）。這個資料夾等同 Garmin 帳號的存取權，請勿外流或提交到版本控制。常用選項：`--token-dir <資料夾>` 改存放位置、`--is-cn` 用於 Garmin 中國區帳號、`--no-env` 不修改 `.env`。
+
+### 7.2 配對方式
+
+每一筆 Strava 跑步，RunTwin 會找開始時間相差 ±120 秒內、距離差 5% 以內的 Garmin 跑步活動。配對到的指標存在 `Activity.garmin_metrics` 並交給分析使用；沒配對到的跑步就沒有 Garmin 資料。
+
+### 7.3 確認連線
+
+首次同步（第 8 節）後，打開一筆最近的跑步 `http://127.0.0.1:8000/activities/<id>`。有配對到時，分析內容會提到 Garmin 訓練效果或心率區間。Garmin 的問題只會在 worker 輸出中以 warning 出現，例如 `Garmin metrics unavailable`。
+
+### 7.4 Docker
+
+Worker 與 scheduler 會掛載主機上的 `RUNTWIN_GARMIN_HOST_TOKEN_DIR`（預設 `~/.garminconnect`）。先在主機執行上面的腳本，再於 `.env` 設定 `RUNTWIN_GARMIN_ENABLED=1` 並重啟 Compose。
+
+### 7.5 常見問題
+
+| 症狀 | 解法 |
+|---|---|
+| 執行腳本時顯示 `Garmin login failed` | 確認 email 和密碼。先用瀏覽器登入 <https://connect.garmin.com> 一次，處理掉可能的安全確認，再重試。 |
+| Worker 出現 `Garmin metrics unavailable` | Token 過期或被撤銷，重新執行 `configure_garmin_auth.py`。 |
+| 某筆跑步沒有 Garmin 資料 | 這趟沒有用 Garmin 記錄，或開始時間、距離和 Strava 那筆差太多。 |
+| 想關閉 Garmin | 設定 `RUNTWIN_GARMIN_ENABLED=0` 並重啟，可刪除 token 資料夾。 |
+
+## 8. 首次同步與測試
 
 同步自己的 Strava 活動：
 
@@ -192,7 +259,7 @@ RUNTWIN_AI_MODEL=
 .venv\Scripts\python.exe manage.py publish_activity_analysis <activity-id> --dry-run
 ```
 
-## 8. 啟動三個常駐程序
+## 9. 啟動三個常駐程序
 
 開三個 PowerShell 視窗，全部進入 `C:\RunTwin`。
 
@@ -224,7 +291,7 @@ RUNTWIN_AI_MODEL=
 
 關閉任一視窗就會停止相應服務。若需要開機自動啟動，建議改用 Docker Compose 或自行建立 Windows Scheduled Task／service。
 
-## 9. Webhook 即時模式（進階、選配）
+## 10. Webhook 即時模式（進階、選配）
 
 沒有 Webhook 時最慢約等待一個 reconciliation interval。若希望上傳 Strava 後立即處理，需要：
 
@@ -259,7 +326,7 @@ STRAVA_WEBHOOK_SUBSCRIPTION_ID=回傳的數字
 
 7. 重新啟動 Web 與 worker。
 
-## 10. Docker 模式（選配）
+## 11. Docker 模式（選配）
 
 1. 安裝並啟動 Docker Desktop。
 2. `.env` 裡的路徑使用容器預設值，例如：
@@ -289,7 +356,7 @@ docker compose exec web python manage.py create_local_user
 
 Compose 會啟動 PostgreSQL、Web、worker 與每日 scheduler。公開 Webhook 仍需額外的 HTTPS reverse proxy 或 tunnel。
 
-## 11. 驗證與故障排除
+## 12. 驗證與故障排除
 
 Django 設定：
 
@@ -325,7 +392,7 @@ Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8000/healthz
 - `.env` 修改後未生效：重新啟動 Web、worker 與 scheduler。
 - SQLite `database is locked`：避免重複啟動多份 worker／server；長期部署改用 Docker PostgreSQL。
 
-## 12. 安全檢查
+## 13. 安全檢查
 
 分享、備份或回報問題前，絕對不要附上：
 
@@ -335,6 +402,7 @@ Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8000/healthz
 - `runtime/` logs／exports
 - `snapshots/`
 - 畫面截圖中的個人資料
+- Garmin token 資料夾（`~/.garminconnect`）
 - Client secret、refresh token、Anthropic／OpenAI key
 
 更完整的部署與多人架構說明請閱讀 [`docs/sharing-and-deployment.md`](docs/sharing-and-deployment.md)。

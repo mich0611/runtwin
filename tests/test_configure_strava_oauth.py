@@ -1,6 +1,21 @@
 from pathlib import Path
 
-from scripts.configure_strava_oauth import update_env
+import pytest
+
+from scripts.configure_strava_oauth import missing_scopes, update_env
+
+
+@pytest.mark.parametrize(
+    ("granted", "expected"),
+    [
+        ("read,activity:read_all,activity:write", []),
+        ("read,activity:read_all", ["activity:write"]),
+        ("read", ["activity:read_all", "activity:write"]),
+        ("", []),
+    ],
+)
+def test_missing_scopes_detects_unticked_permissions(granted, expected):
+    assert missing_scopes("activity:read_all,activity:write", granted) == expected
 
 
 def test_update_env_replaces_credentials_without_touching_other_settings(tmp_path: Path):

@@ -126,7 +126,7 @@ python manage.py run_weekly_scheduler [--once]
 
 ### Analyze and publish every new run automatically
 
-1. Create a personal Strava API application with at least `activity:read_all,activity:write`, and put the client ID, client secret, and refresh token in `.env`. `scripts/configure_strava_oauth.py` can do the OAuth exchange for you.
+1. Connect Strava: create your own Strava API application (callback domain `localhost`), then run `python scripts/configure_strava_oauth.py`. It opens the Strava consent page, checks that both `activity:read_all` and `activity:write` were granted, and writes the client ID, secret, refresh token, and athlete ID into `.env`. Field-by-field steps: [DISTRIBUTION-SOP.md § 4](DISTRIBUTION-SOP.md#4-connect-strava).
 2. (Optional) Set `RUNTWIN_AI_PROVIDER=anthropic` with `ANTHROPIC_API_KEY`, or `RUNTWIN_AI_PROVIDER=openai` with `OPENAI_API_KEY`. See [AI modes](#ai-modes).
 3. (Optional, real-time) Webhook setup:
    - Set a random `STRAVA_WEBHOOK_PATH_TOKEN` (at least 32 bytes) and a separate random `STRAVA_WEBHOOK_VERIFY_TOKEN`.
@@ -148,8 +148,8 @@ Failed events are retried up to `STRAVA_WEBHOOK_MAX_ATTEMPTS` times. Events stuc
 Strava stays the primary source. Garmin only adds metrics that Strava lacks: training effect, training load, HR zones, running dynamics, Body Battery, VO2max, and weather. These are stored in `Activity.garmin_metrics` and passed to the LLM. Workout classification never changes because of Garmin data.
 
 - **Unofficial API.** RunTwin uses the `garminconnect` package, which is not an official Garmin API and may break when Garmin changes.
-- **Tokens.** Run `garmin-mcp-auth` in your own terminal (MFA required). Tokens default to `~/.garminconnect`. RunTwin never stores your Garmin password.
-- **Enable** with `RUNTWIN_GARMIN_ENABLED=1`, and set `RUNTWIN_GARMIN_TOKEN_DIR` if needed. **Disable** with `RUNTWIN_GARMIN_ENABLED=0`, which is the default.
+- **Connect.** Run `python scripts/configure_garmin_auth.py` once in your own terminal. It asks for your Garmin email, password, and MFA code, saves tokens to `~/.garminconnect`, and sets `RUNTWIN_GARMIN_ENABLED=1` in `.env`. RunTwin never stores your Garmin password. If Garmin later asks you to sign in again (tokens expired or revoked), re-run the script. Full steps: [DISTRIBUTION-SOP.md § 7](DISTRIBUTION-SOP.md#7-connect-garmin-optional).
+- **Disable** with `RUNTWIN_GARMIN_ENABLED=0`, which is the default. To use a different token folder, pass `--token-dir` to the script.
 - **Failures** (login, lookup, or no match within ±120 s start time and ≤5% distance) only log a warning. Analysis and publishing still complete, with `garmin_metrics` left as `{}`.
 
 To backfill history, preview with `backfill_activity_analyses --since 2025-06-01 --dry-run`, then run it again without `--dry-run`. Already-published runs are skipped, so the command is safe to re-run.

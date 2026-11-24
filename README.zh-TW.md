@@ -123,7 +123,7 @@ python manage.py run_weekly_scheduler [--once]
 
 ### 自動分析並回填每次新跑步
 
-1. 在 Strava 建立個人 API application，OAuth 授權至少包含 `activity:read_all,activity:write`，把 client ID、client secret、refresh token 放入 `.env`。
+1. 連接 Strava：建立自己的 Strava API application（callback domain 填 `localhost`），再執行 `python scripts/configure_strava_oauth.py`。它會開啟 Strava 授權頁、確認 `activity:read_all` 與 `activity:write` 都有授權，並把 client ID、secret、refresh token 與 athlete ID 寫入 `.env`。逐欄說明見 [DISTRIBUTION-SOP.zh-TW.md 第 4 節](DISTRIBUTION-SOP.zh-TW.md#4-連接-strava)。
 2. （選配）設定 `RUNTWIN_AI_PROVIDER=anthropic` 加 `ANTHROPIC_API_KEY`，或 `RUNTWIN_AI_PROVIDER=openai` 加 `OPENAI_API_KEY`，詳見下方「AI 模式」。另設定至少 32 bytes 的隨機 `STRAVA_WEBHOOK_PATH_TOKEN` 與另一組隨機 `STRAVA_WEBHOOK_VERIFY_TOKEN`。公開 HTTPS `STRAVA_WEBHOOK_CALLBACK_URL` 必須以 `/webhooks/strava/<STRAVA_WEBHOOK_PATH_TOKEN>` 結尾，且該公開 hostname 必須列入 `DJANGO_ALLOWED_HOSTS`。截至 2026-09，Strava 尚未正式提供可用的 webhook signing secret，因此預設 `STRAVA_WEBHOOK_REQUIRE_SIGNATURE=0`；日後正式開放時再填 secret 並啟用驗證。
 3. 確認上述公開 callback 可連線，執行 `python manage.py manage_strava_webhook create`；再用 `list` 取得 subscription ID，填入必要的 `STRAVA_WEBHOOK_SUBSCRIPTION_ID`。個人部署也必須填 `STRAVA_ATHLETE_ID`，worker 會在讀取或寫入活動前驗證兩者；完整活動仍透過你的 OAuth token 從 Strava 重新取得。
 4. 啟動 Web 與 worker：`docker compose up --build`。Webhook endpoint 只驗證、去重並入列，會在兩秒內回覆；`webhook-worker` 另行讀取 activity/streams、判定 Easy／Recovery／Long／Tempo／Threshold／Intervals／Fartlek／Progression／Race，以冪等 `[Type]` 前綴更新 title，並產生含少量 emoji 的繁中分析（活動判讀、整體評比、數據觀察、這堂課練了什麼、恢復與下一步、依 6–12 週歷史的下一步）。原 title 與 description 會保留，分析區塊只會有一份。Worker 每小時也會掃描近 `STRAVA_RECONCILE_DAYS`（預設 14）天活動，補上停機或 webhook 遺漏期間的新跑步；電腦或 Docker 停機超過此天數時，請手動執行 `reconcile_strava_activities --days N`。
@@ -136,8 +136,8 @@ LLM 暫時不可用或未設定時，worker 使用 deterministic 分析完成回
 Strava 仍是主要來源；Garmin 只補充 Strava 沒有的指標（訓練效果、訓練負荷、心率區間、跑姿、Body Battery、VO2max 與天氣），存在 `Activity.garmin_metrics` 並交給 LLM 分析。活動分類仍由 RunTwin 規則決定，不會因 Garmin 訓練效果改變 title 的 `[Type]`。
 
 - **非官方 API**：使用 `garminconnect` 套件存取 Garmin Connect，不是 Garmin 官方開放的 API，可能因 Garmin 改版而失效。
-- **Token**：在自己的終端機執行 `garmin-mcp-auth`（需要 MFA），token 預設存在 `~/.garminconnect`。RunTwin 不保存 Garmin 密碼，也不處理 MFA；token 過期時重新執行即可。
-- **啟用**：在 `.env` 設定 `RUNTWIN_GARMIN_ENABLED=1`；token 不在預設位置時另設 `RUNTWIN_GARMIN_TOKEN_DIR`。
+- **連線**：在自己的終端機執行一次 `python scripts/configure_garmin_auth.py`。它會詢問 Garmin email、密碼與 MFA 驗證碼，把 token 存到 `~/.garminconnect`，並在 `.env` 設定 `RUNTWIN_GARMIN_ENABLED=1`。RunTwin 不保存 Garmin 密碼；之後 Garmin 要求重新登入（token 過期或被撤銷）時，重新執行即可。完整步驟見 [DISTRIBUTION-SOP.zh-TW.md 第 7 節](DISTRIBUTION-SOP.zh-TW.md#7-連接-garmin選配)。
+- **自訂位置**：要把 token 放在其他資料夾，執行腳本時加 `--token-dir`。
 - **關閉**：設定 `RUNTWIN_GARMIN_ENABLED=0`（預設）。
 - **失敗處理**：登入、查詢失敗或找不到配對（開始時間 ±120 秒、距離差 ≤ 5%）時只記錄 warning，分析與回填照常完成，`garmin_metrics` 保持 `{}`。同一次 backfill／reconcile 共用一個 Garmin 連線。
 

@@ -94,4 +94,4 @@ LLM 憑證是**選配**：
 .venv\Scripts\python.exe manage.py runserver
 ```
 
-單人 Strava 自動化的環境變數與命令請接續閱讀主 [`README.md`](../README.md#自動分析並回填每次新跑步)。
+連接 Strava 與 Garmin 的逐步說明見 [`DISTRIBUTION-SOP.zh-TW.md`](../DISTRIBUTION-SOP.zh-TW.md#4-連接-strava)；單人 Strava 自動化的環境變數與命令請接續閱讀 [`README.zh-TW.md`](../README.zh-TW.md#自動分析並回填每次新跑步)。

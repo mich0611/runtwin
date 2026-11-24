@@ -90,7 +90,7 @@ services:
     command: ["python", "manage.py", "process_strava_webhooks"]
     volumes:
       - runtime_data:/app/runtime
-      # Tokens from garmin-mcp-auth on the host. Writable so refreshed tokens persist for the host too.
+      # Tokens from scripts/configure_garmin_auth.py on the host. Writable so refreshed tokens persist for the host too.
       - ${RUNTWIN_GARMIN_HOST_TOKEN_DIR:-~/.garminconnect}:/app/garmin-tokens
     depends_on:
       web:

@@ -70,7 +70,7 @@ def extract_weather(weather: Any) -> dict[str, Any]:
 
 
 class GarminMetricsProvider:
-    """Read-only Garmin Connect access that reuses the tokens created by garmin-mcp-auth."""
+    """Read-only Garmin Connect access that reuses the tokens saved by scripts/configure_garmin_auth.py."""
 
     def __init__(self, token_dir: str, client_factory: Callable[[], Any] | None = None):
         self.token_dir = token_dir

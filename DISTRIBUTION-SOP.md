@@ -22,6 +22,7 @@ Under Strava's current rules, the account that creates an API application needs 
 
 - An Anthropic or OpenAI API key, for richer LLM-written analysis. Without one, the rule-based fallback is used.
 - Docker Desktop, for PostgreSQL and always-on services. For a first try, the local mode below is simpler.
+- A Garmin Connect account, if you also record runs on a Garmin watch (step 7).
 - A public HTTPS domain or tunnel, which is only needed for real-time webhooks. Without it, the worker still picks up new runs every hour.
 
 ## 1. Get the source
@@ -74,30 +75,39 @@ RUNTWIN_ADMIN_EMAIL=
 
 `.env` holds passwords and tokens. Never upload it, share it, or commit it. It is already in `.gitignore`.
 
-## 4. Create your own Strava API application
+## 4. Connect Strava
 
-1. Sign in to Strava and open <https://www.strava.com/settings/api>.
-2. Create an application. The website can be any description URL for local use.
-3. Set **Authorization Callback Domain** to `localhost`.
-4. Note your Client ID and Client Secret.
-5. The OAuth scopes must include:
-   - `activity:read_all`, to read activities including Only Me ones.
-   - `activity:write`, to publish `[Easy]`/`[Long]` title tags and the analysis block.
+RunTwin talks to Strava through **your own** Strava API application. You create it once, then authorize it to access your account.
 
-Then run the bundled OAuth helper:
+### 4.1 Create the API application
+
+1. Sign in to Strava in a browser and open <https://www.strava.com/settings/api>.
+2. Fill in the form:
+   | Field | What to enter |
+   |---|---|
+   | Application Name | Anything, e.g. `My RunTwin` |
+   | Category | `Training` (any category works) |
+   | Website | Any URL, e.g. `http://localhost` |
+   | Authorization Callback Domain | `localhost` (exactly this; no `http://`, no port) |
+3. Upload an icon if Strava asks for one (any image works), and agree to the API terms.
+4. On the app page, copy the **Client ID** (a number) and the **Client Secret** (click *show*). Treat the secret like a password.
+
+### 4.2 Authorize your account
+
+Run the bundled helper from the RunTwin folder:
 
 ```powershell
 .venv\Scripts\python.exe scripts\configure_strava_oauth.py
 ```
 
-Enter your Client ID and Client Secret when prompted. The helper:
+1. Paste your Client ID and Client Secret when prompted.
+2. A browser opens the Strava consent page. **Keep both permission checkboxes ticked**, then click **Authorize**:
+   - *View data about your private activities* (`activity:read_all`), so RunTwin can read all your runs, including Only Me ones.
+   - *Upload your activities … to Strava* (`activity:write`), so RunTwin can add `[Easy]`/`[Long]` title tags and the analysis block.
+3. The browser shows *"Strava authorization received. You can close this window."*
+4. The terminal prints `Updated .env with this athlete's Strava OAuth settings.`
 
-1. opens the Strava authorization page,
-2. receives the one-time code at `http://localhost:8765/callback`,
-3. exchanges it for tokens,
-4. writes your client ID, client secret, refresh token, and athlete ID into `.env`.
-
-Afterwards `.env` contains:
+The helper waits 5 minutes for the redirect. It writes these to `.env`:
 
 ```dotenv
 STRAVA_CLIENT_ID=your-client-id
@@ -106,7 +116,29 @@ STRAVA_REFRESH_TOKEN=your-refresh-token
 STRAVA_ATHLETE_ID=your-numeric-athlete-id
 ```
 
-If a firewall blocks the local callback, get a refresh token manually by following Strava's OAuth docs: <https://developers.strava.com/docs/authentication/>.
+RunTwin refreshes the access token automatically from then on and saves rotated tokens to `STRAVA_TOKEN_FILE`. You don't need to repeat this step unless you revoke access.
+
+### 4.3 Check the connection
+
+```powershell
+.venv\Scripts\python.exe manage.py migrate
+.venv\Scripts\python.exe manage.py sync_strava_activities
+```
+
+If this ends without an error and reports imported activities, Strava is connected.
+
+### 4.4 If something goes wrong
+
+| Symptom | Fix |
+|---|---|
+| Strava page says `redirect_uri invalid` | Authorization Callback Domain must be exactly `localhost`. |
+| `Authorization is missing required permissions` | You unticked a checkbox. Run the helper again and keep both ticked. |
+| `Timed out waiting for the Strava redirect` | Run the helper again and finish within 5 minutes. |
+| Browser can't open `localhost:8765` | Another program is using port 8765, or a firewall blocks it. Run with `--redirect-uri http://localhost:8766/callback`. |
+| No browser available (server, SSH) | Run with `--no-browser`, open the printed URL on any device signed in to Strava, then copy the final `localhost` address from that browser and open it on the RunTwin machine. Or follow Strava's manual OAuth steps: <https://developers.strava.com/docs/authentication/>. |
+| `sync_strava_activities` returns `401` | Wrong client secret, or access was revoked. Run the helper again. |
+
+To disconnect RunTwin later, revoke it at <https://www.strava.com/settings/apps>.
 
 ## 5. Configure AI analysis (optional)
 
@@ -142,7 +174,7 @@ To run without AI, leave `RUNTWIN_AI_PROVIDER` empty and the deterministic fallb
 
 `seed_athlete_profile` only creates an empty profile with no personal data.
 
-After starting the web app (step 8), sign in to Django admin at <http://127.0.0.1:8000/admin/>. Open **Athlete profiles** and fill in your own values:
+After starting the web app (step 9), sign in to Django admin at <http://127.0.0.1:8000/admin/>. Open **Athlete profiles** and fill in your own values:
 
 - time zone
 - half-marathon PB and goal
@@ -156,7 +188,46 @@ After starting the web app (step 8), sign in to Django admin at <http://127.0.0.
 
 Don't copy someone else's numbers. You can leave unknown fields empty. If you don't know your usual weekly distance or weekday limit, enter `0`.
 
-## 7. First sync and test
+## 7. Connect Garmin (optional)
+
+Strava stays the main data source. If you also record runs with a Garmin watch, RunTwin can add Garmin-only metrics to each analysis: training effect, training load, HR zones, running dynamics, Body Battery, VO2max, and weather. Without Garmin everything still works.
+
+> Garmin Connect has no official API for personal projects. RunTwin uses the unofficial `garminconnect` package, which can break when Garmin changes its login. Garmin failures never block Strava analysis.
+
+### 7.1 Sign in once
+
+```powershell
+.venv\Scripts\python.exe scripts\configure_garmin_auth.py
+```
+
+1. Enter your Garmin Connect email and password. The password is used once and never saved.
+2. If your account has two-step verification, enter the code Garmin sends you at the `Garmin MFA code:` prompt.
+3. The terminal prints `Garmin tokens saved to ...` and `Updated .env: RUNTWIN_GARMIN_ENABLED=1 ...`.
+
+Tokens are saved to `~/.garminconnect` (on Windows, `C:\Users\<you>\.garminconnect`). That folder grants access to your Garmin account, so keep it private and never commit it. Useful options: `--token-dir <folder>` for another location, `--is-cn` for Garmin Connect China accounts, and `--no-env` to leave `.env` unchanged.
+
+### 7.2 How matching works
+
+For each Strava run, RunTwin looks for a Garmin running activity that started within ±120 seconds and whose distance differs by at most 5%. Matched metrics are stored in `Activity.garmin_metrics` and passed to the analysis. Unmatched runs simply have no Garmin data.
+
+### 7.3 Check the connection
+
+After the first sync (step 8), open a recent run at `http://127.0.0.1:8000/activities/<id>`. When a match was found, the analysis mentions Garmin training effect or HR zones. Garmin problems only show up as warnings in the worker output, for example `Garmin metrics unavailable`.
+
+### 7.4 Docker
+
+The worker and scheduler mount the host folder `RUNTWIN_GARMIN_HOST_TOKEN_DIR` (default `~/.garminconnect`). Run the script on the host first, then set `RUNTWIN_GARMIN_ENABLED=1` in `.env` and restart Compose.
+
+### 7.5 If something goes wrong
+
+| Symptom | Fix |
+|---|---|
+| `Garmin login failed` while running the script | Check your email and password. Sign in once at <https://connect.garmin.com> in a browser to clear any security prompt, then retry. |
+| Worker logs `Garmin metrics unavailable` | Tokens expired or were revoked. Run `configure_garmin_auth.py` again. |
+| No Garmin data on a run | The run wasn't recorded on Garmin, or its start time or distance differs too much from the Strava copy. |
+| You want to turn Garmin off | Set `RUNTWIN_GARMIN_ENABLED=0` and restart. You can delete the token folder. |
+
+## 8. First sync and test
 
 Sync your Strava activities:
 
@@ -176,7 +247,7 @@ Note that `reconcile_strava_activities` **modifies** Strava titles and descripti
 .venv\Scripts\python.exe manage.py publish_activity_analysis <activity-id> --dry-run
 ```
 
-## 8. Start the three services
+## 9. Start the three services
 
 Open three PowerShell windows in `C:\RunTwin`.
 
@@ -204,9 +275,9 @@ Even without a public webhook, the worker re-scans the last 14 days (`STRAVA_REC
 
 This refreshes the current week's report at 09:00 Asia/Taipei every day, and finalizes the previous week on Mondays.
 
-Closing a window stops that service. To start everything on boot, use Docker Compose (step 10) or a Windows Scheduled Task or service.
+Closing a window stops that service. To start everything on boot, use Docker Compose (step 11) or a Windows Scheduled Task or service.
 
-## 9. Real-time webhook mode (advanced, optional)
+## 10. Real-time webhook mode (advanced, optional)
 
 Without a webhook, new runs appear within one reconcile interval (one hour by default). For near-instant processing you need:
 
@@ -238,7 +309,7 @@ Without a webhook, new runs appear within one reconcile interval (one hour by de
 6. Put the returned ID in `STRAVA_WEBHOOK_SUBSCRIPTION_ID=`.
 7. Restart the web app and the worker.
 
-## 10. Docker mode (optional)
+## 11. Docker mode (optional)
 
 1. Install and start Docker Desktop.
 2. In `.env`, use the container paths:
@@ -268,7 +339,7 @@ Without a webhook, new runs appear within one reconcile interval (one hour by de
 
 Compose runs PostgreSQL, the web app, the worker, and the daily scheduler. A public webhook still needs an HTTPS reverse proxy or tunnel.
 
-## 11. Verify and troubleshoot
+## 12. Verify and troubleshoot
 
 ```powershell
 .venv\Scripts\python.exe manage.py check
@@ -286,7 +357,7 @@ Common issues:
 - **`.env` changes have no effect**: restart the web app, the worker, and the scheduler.
 - **SQLite `database is locked`**: don't start multiple workers or servers. For long-term use, switch to Docker PostgreSQL.
 
-## 12. Security checklist
+## 13. Security checklist
 
 Before sharing, backing up, or reporting an issue, never attach:
 
@@ -296,6 +367,7 @@ Before sharing, backing up, or reporting an issue, never attach:
 - `runtime/` logs and exports
 - `snapshots/`
 - screenshots showing personal data
+- the Garmin token folder (`~/.garminconnect`)
 - your client secret, refresh token, or Anthropic/OpenAI key
 
 For deployment models and multi-user considerations, see [`docs/sharing-and-deployment.md`](docs/sharing-and-deployment.md) (Chinese).

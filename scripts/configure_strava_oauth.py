@@ -53,6 +53,7 @@ def main() -> int:
             result["state"] = query.get("state", [""])[0]
             result["code"] = query.get("code", [""])[0]
             result["error"] = query.get("error", [""])[0]
+            result["scope"] = query.get("scope", [""])[0]
             body = "Strava authorization received. You can close this window."
             self.send_response(200)
             self.send_header("Content-Type", "text/plain; charset=utf-8")
@@ -63,21 +64,34 @@ def main() -> int:
         def log_message(self, format, *args):
             return
 
-    print("Open this URL and authorize your own Strava account:\n")
+    print("Open this URL and authorize your own Strava account.")
+    print("Keep every permission checkbox ticked on the Strava page (read all activities + write).\n")
     print(authorization_url)
     if not args.no_browser:
         webbrowser.open(authorization_url)
 
     server = HTTPServer((redirect.hostname, redirect.port), CallbackHandler)
     server.timeout = 300
+    print(f"\nWaiting up to 5 minutes for Strava to redirect to {args.redirect_uri} ...")
     server.handle_request()
     server.server_close()
+    if not result:
+        print("Timed out waiting for the Strava redirect. Run the script again.", file=sys.stderr)
+        return 1
 
     if result.get("state") != state:
         print("Authorization failed: invalid or missing OAuth state.", file=sys.stderr)
         return 1
     if result.get("error") or not result.get("code"):
         print(f"Authorization failed: {result.get('error') or 'missing code'}", file=sys.stderr)
+        return 1
+    missing = missing_scopes(args.scope, result.get("scope", ""))
+    if missing:
+        print(
+            "Authorization is missing required permissions: " + ", ".join(missing)
+            + ". Run the script again and keep every checkbox ticked on the Strava page.",
+            file=sys.stderr,
+        )
         return 1
 
     payload = urlencode({
@@ -112,6 +126,14 @@ def main() -> int:
     print(f"Updated {args.env_file} with this athlete's Strava OAuth settings.")
     print("Keep .env private. Restart RunTwin services after changing credentials.")
     return 0
+
+
+def missing_scopes(requested: str, granted: str) -> list[str]:
+    """Strava lets the athlete untick scopes; report requested scopes that were not granted."""
+    granted_set = {item.strip() for item in granted.split(",") if item.strip()}
+    if not granted_set:
+        return []  # Some Strava responses omit scope; the token exchange still validates access.
+    return [item.strip() for item in requested.split(",") if item.strip() and item.strip() not in granted_set]
 
 
 def update_env(path: Path, values: dict[str, str]) -> None:
